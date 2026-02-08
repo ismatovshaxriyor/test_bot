@@ -23,8 +23,9 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_html(
             "✍️ <b>Test yechish</b>\n\n"
-            "Test kodini kiriting:\n"
-            "Masalan: <code>ABC123</code>\n\n"
+            "Test egasi sizga yuborgan <b>6 xonali kodni</b> kiriting:\n\n"
+            "💡 Kod harflar va raqamlardan iborat\n"
+            "(masalan: <code>5NI7HB</code> yoki <code>K9X2LM</code>)\n\n"
             "❌ Bekor qilish: /cancel"
         )
         return WAITING_TEST_CODE

@@ -157,11 +157,37 @@ def format_stats(stats: Dict, test: Test) -> str:
         text += f"❌ Eng qiyin savol: #{stats['hardest']} ({hardest_stat['percentage']}% to'g'ri)\n"
 
     text += "\n<b>🏆 Reyting:</b>\n"
-    for i, sub in enumerate(stats['submissions'][:10], 1):
-        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+
+    submissions = stats['submissions']
+
+    # Bir xil ballga bir xil o'rin berish
+    current_rank = 1
+    prev_percentage = None
+    same_rank_count = 0
+
+    for i, sub in enumerate(submissions):
+        # Agar oldingi bilan bir xil ball bo'lsa, o'rin o'zgarmaydi
+        if prev_percentage is not None and sub['percentage'] == prev_percentage:
+            same_rank_count += 1
+            rank = current_rank
+        else:
+            current_rank = i + 1
+            rank = current_rank
+            same_rank_count = 1
+
+        prev_percentage = sub['percentage']
+
+        # Medal yoki raqam
+        if rank == 1:
+            medal = "🥇"
+        elif rank == 2:
+            medal = "🥈"
+        elif rank == 3:
+            medal = "🥉"
+        else:
+            medal = f"{rank}."
+
         text += f"{medal} {sub['user']}: {sub['correct']}/{sub['total']} ({sub['percentage']}%)\n"
 
-    if len(stats['submissions']) > 10:
-        text += f"\n... va yana {len(stats['submissions']) - 10} ta ishtirokchi"
-
     return text
+
