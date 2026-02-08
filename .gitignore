@@ -99,6 +99,8 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 *.db
+test_bot.db
+
 
 # Flask stuff:
 instance/
