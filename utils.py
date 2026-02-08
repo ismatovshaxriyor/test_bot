@@ -160,32 +160,26 @@ def format_stats(stats: Dict, test: Test) -> str:
 
     submissions = stats['submissions']
 
-    # Bir xil ballga bir xil o'rin berish
-    current_rank = 1
+    # Ketma-ket medal tizimi - bir xil ball = bir xil medal darajasi
+    medal_rank = 0  # Medal darajasi (1=gold, 2=silver, 3=bronze, 4+=raqam)
     prev_percentage = None
-    same_rank_count = 0
 
     for i, sub in enumerate(submissions):
-        # Agar oldingi bilan bir xil ball bo'lsa, o'rin o'zgarmaydi
-        if prev_percentage is not None and sub['percentage'] == prev_percentage:
-            same_rank_count += 1
-            rank = current_rank
-        else:
-            current_rank = i + 1
-            rank = current_rank
-            same_rank_count = 1
+        # Agar oldingi bilan farqli ball bo'lsa, medal darajasi oshadi
+        if prev_percentage is None or sub['percentage'] != prev_percentage:
+            medal_rank += 1
 
         prev_percentage = sub['percentage']
 
         # Medal yoki raqam
-        if rank == 1:
+        if medal_rank == 1:
             medal = "🥇"
-        elif rank == 2:
+        elif medal_rank == 2:
             medal = "🥈"
-        elif rank == 3:
+        elif medal_rank == 3:
             medal = "🥉"
         else:
-            medal = f"{rank}."
+            medal = f"{medal_rank}."
 
         text += f"{medal} {sub['user']}: {sub['correct']}/{sub['total']} ({sub['percentage']}%)\n"
 
