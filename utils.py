@@ -172,14 +172,15 @@ def format_stats(stats: Dict, test: Test) -> str:
         prev_percentage = sub['percentage']
 
         # Medal yoki raqam
+        num = i + 1
         if medal_rank == 1:
-            medal = "🥇"
+            medal = f"🥇 {num}."
         elif medal_rank == 2:
-            medal = "🥈"
+            medal = f"🥈 {num}."
         elif medal_rank == 3:
-            medal = "🥉"
+            medal = f"🥉 {num}."
         else:
-            medal = f"{medal_rank}."
+            medal = f"{num}."
 
         text += f"{medal} {sub['user']}: {sub['correct']}/{sub['total']} ({sub['percentage']}%)\n"
 
