@@ -125,6 +125,10 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return ConversationHandler.END
 
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Faqat matn yuboring!")
+        return WAITING_USER_ANSWERS
+
     answers = update.message.text.strip().lower()
 
     # Validatsiya

@@ -78,7 +78,10 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
         keyboard = back_to_test_keyboard(code)
 
     if edit:
-        await message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        try:
+            await message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except Exception:
+            pass
     else:
         await message.reply_html(text, reply_markup=keyboard)
 
