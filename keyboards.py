@@ -84,8 +84,13 @@ def confirm_end_keyboard(test_code: str):
 
 
 def back_to_test_keyboard(test_code: str):
-    """Testga qaytish"""
+    """Testga qaytish + yuklab olish"""
     keyboard = [
+        [
+            InlineKeyboardButton("📥 Excel", callback_data=f"export_excel_{test_code}"),
+            InlineKeyboardButton("📥 PDF", callback_data=f"export_pdf_{test_code}"),
+            InlineKeyboardButton("📊 Grafik", callback_data=f"export_chart_{test_code}"),
+        ],
         [InlineKeyboardButton("🔙 Orqaga", callback_data=f"test_{test_code}")]
     ]
     return InlineKeyboardMarkup(keyboard)

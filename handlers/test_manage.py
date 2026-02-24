@@ -4,7 +4,8 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 from database import get_or_create_user, Test, TestSubmission, User
-from utils import get_question_stats, format_stats
+from utils import get_question_stats, format_stats, format_stats_simple
+from export import export_to_excel, export_to_pdf, export_chart
 from config import ADMIN_ID
 from keyboards import (
     main_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
@@ -139,10 +140,12 @@ async def show_end_confirmation(message, context, code: str, user_id: int, edit:
         return
 
     subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
+    mode_text = "📐 Rasch" if test.scoring_mode == "rasch" else "📊 Oddiy"
     text = (
         f"⚠️ <b>Testni yakunlashni tasdiqlang</b>\n\n"
         f"📝 Kod: <code>{code}</code>\n"
-        f"👥 Ishtirokchilar: {subs_count} ta\n\n"
+        f"👥 Ishtirokchilar: {subs_count} ta\n"
+        f"📐 Baholash: {mode_text}\n\n"
         f"Yakunlangandan keyin hech kim bu testni yecha olmaydi."
     )
 
@@ -182,7 +185,12 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # Yakuniy statistikani olish
     stats = get_question_stats(test)
     text = f"🔚 <b>Test yakunlandi!</b>\n\n"
-    text += format_stats(stats, test)
+
+    # Saqlangan baholash turini ishlatish
+    if test.scoring_mode == 'rasch':
+        text += format_stats(stats, test)
+    else:
+        text += format_stats_simple(stats, test)
 
     await query.message.edit_text(text, parse_mode="HTML")
 
@@ -322,6 +330,61 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(text, reply_markup=main_menu_keyboard())
 
 
+async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Natijalarni faylga eksport qilish"""
+    query = update.callback_query
+    await query.answer("📥 Fayl tayyorlanmoqda...")
+
+    # export_excel_CODE yoki export_pdf_CODE
+    parts = query.data.split("_", 2)  # ['export', 'excel/pdf', 'CODE']
+    fmt = parts[1]  # 'excel' yoki 'pdf'
+    code = parts[2]
+    user = update.effective_user
+
+    try:
+        test = Test.get(Test.unique_code == code)
+    except Test.DoesNotExist:
+        await query.message.reply_text(f"❌ '{code}' kodli test topilmadi!")
+        return
+
+    if test.creator.telegram_id != user.id and user.id != ADMIN_ID:
+        await query.message.reply_text("❌ Siz bu testning natijalarini yuklab ololmaysiz!")
+        return
+
+    # Statistikani olish
+    stats = get_question_stats(test)
+    if stats['total_submissions'] == 0:
+        await query.message.reply_text("📭 Hali hech kim test yechmagan.")
+        return
+
+    try:
+        import os
+        if fmt == 'excel':
+            filepath = export_to_excel(stats, test)
+            await query.message.reply_document(
+                document=open(filepath, 'rb'),
+                filename=f"test_{code}.xlsx",
+                caption=f"📊 Test {code} natijalari (Excel)"
+            )
+        elif fmt == 'pdf':
+            filepath = export_to_pdf(stats, test)
+            await query.message.reply_document(
+                document=open(filepath, 'rb'),
+                filename=f"test_{code}.pdf",
+                caption=f"📊 Test {code} natijalari (PDF)"
+            )
+        elif fmt == 'chart':
+            filepath = export_chart(stats, test)
+            await query.message.reply_photo(
+                photo=open(filepath, 'rb'),
+                caption=f"📊 Test {code} — Tahlil grafigi"
+            )
+        # Vaqtinchalik faylni o'chirish
+        os.remove(filepath)
+    except Exception as e:
+        await query.message.reply_text(f"❌ Fayl yaratishda xatolik: {str(e)}")
+
+
 def get_handlers():
     """Handlerlarni qaytarish"""
     return [
@@ -333,6 +396,7 @@ def get_handlers():
         CallbackQueryHandler(stats_callback, pattern=r"^stats_"),
         CallbackQueryHandler(end_callback, pattern=r"^end_(?!confirm)"),
         CallbackQueryHandler(confirm_end_callback, pattern=r"^confirm_end_"),
+        CallbackQueryHandler(export_callback, pattern=r"^export_(excel|pdf|chart)_"),
         CallbackQueryHandler(mytests_callback, pattern=r"^mytests$"),
         CallbackQueryHandler(test_detail_callback, pattern=r"^test_"),
     ]

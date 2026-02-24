@@ -35,6 +35,7 @@ class Test(BaseModel):
     correct_answers = TextField()
     creator = ForeignKeyField(User, backref="tests")
     is_active = BooleanField(default=True)
+    scoring_mode = CharField(default="simple")  # 'simple' yoki 'rasch'
     created_at = DateTimeField(default=datetime.now)
     ended_at = DateTimeField(null=True)
 
