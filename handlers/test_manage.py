@@ -192,7 +192,7 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         text += format_stats_simple(stats, test)
 
-    await query.message.edit_text(text, parse_mode="HTML")
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_test_keyboard(code))
 
     # Adminga xabar yuborish
     if ADMIN_ID and user.id != ADMIN_ID:
