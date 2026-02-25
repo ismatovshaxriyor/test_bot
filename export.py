@@ -65,7 +65,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     ws['A5'] = "Savollar soni:"
     ws['B5'] = test.total_questions
     ws['A6'] = "Baholash:"
-    ws['B6'] = "Rasch modeli" if test.scoring_mode == "rasch" else "Oddiy"
+    ws['B6'] = "Rash modeli" if test.scoring_mode == "rasch" else "Oddiy"
     for r in range(3, 7):
         ws[f'A{r}'].font = Font(bold=True)
 
@@ -74,7 +74,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     rasch_mode = test.scoring_mode == "rasch"
 
     if rasch_mode:
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Rasch ball", "Daraja"]
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Rash ball", "Daraja"]
     else:
         headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Daraja"]
 
@@ -231,7 +231,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     pdf.set_font(font_name, '', 11)
     pdf.cell(0, 7, f'Ishtirokchilar: {stats["total_submissions"]} ta', new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 7, f'Savollar soni: {test.total_questions} ta', new_x="LMARGIN", new_y="NEXT")
-    mode_text = "Rasch modeli" if test.scoring_mode == "rasch" else "Oddiy"
+    mode_text = "Rash modeli" if test.scoring_mode == "rasch" else "Oddiy"
     pdf.cell(0, 7, f'Baholash: {mode_text}', new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
 
@@ -245,7 +245,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
     if rasch_mode:
         col_widths = [10, 50, 18, 14, 22, 22, 18]
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Rasch", "Daraja"]
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Rash", "Daraja"]
     else:
         col_widths = [10, 65, 22, 18, 28, 18]
         headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Daraja"]

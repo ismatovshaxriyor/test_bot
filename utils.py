@@ -44,9 +44,9 @@ def check_answers(correct: str, submitted: str) -> Tuple[int, int, List[bool]]:
 
 def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     """
-    Rasch modeli bo'yicha ball hisoblash
+    Rash modeli bo'yicha ball hisoblash
 
-    Rasch modeli:
+    Rash modeli:
     - Qiyin savolni to'g'ri yechish = ko'p ball
     - Oson savolni to'g'ri yechish = kam ball
     - Bir xil to'g'ri javob soni bo'lsa ham, qiyin savollarni yechgan yuqori turadi
@@ -101,7 +101,7 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         weight = (wrong_count / total_subs) + 0.5
         question_weights.append(round(weight, 2))
 
-    # 2-QADAM: Rasch ball hisoblash
+    # 2-QADAM: Rash ball hisoblash
     # Har bir foydalanuvchi uchun: to'g'ri javoblarini og'irlik bilan hisoblash
     max_possible = sum(question_weights)  # Barcha savollar to'g'ri bo'lgandagi maksimum
 
@@ -125,7 +125,7 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             'rasch_normalized': rasch_normalized
         })
 
-    # Rasch ball bo'yicha saralash (kattadan kichikga)
+    # Rash ball bo'yicha saralash (kattadan kichikga)
     user_scores.sort(key=lambda x: (-x['rasch_normalized'], -x['percentage']))
 
     return {
@@ -152,7 +152,7 @@ def get_difficulty_label(difficulty: float) -> str:
 
 def get_question_stats(test: Test) -> Dict:
     """
-    Test statistikasini hisoblash (Rasch modeli bilan)
+    Test statistikasini hisoblash (Rash modeli bilan)
     """
     submissions = list(TestSubmission.select().where(TestSubmission.test == test))
 
@@ -194,7 +194,7 @@ def get_question_stats(test: Test) -> Dict:
     easiest = max(range(total_questions), key=lambda i: question_correct[i]) + 1
     hardest = min(range(total_questions), key=lambda i: question_correct[i]) + 1
 
-    # Rasch modeli
+    # Rash modeli
     rasch = calculate_rasch_scores(test, submissions)
 
     # Foydalanuvchilar ro'yxati
@@ -250,7 +250,7 @@ def format_result(correct_count: int, total: int, results: List[bool]) -> str:
 
 
 def format_stats(stats: Dict, test: Test) -> str:
-    """Statistikani formatlash (Rasch modeli bilan)"""
+    """Statistikani formatlash (Rash modeli bilan)"""
     if stats['total_submissions'] == 0:
         return "📊 Hali hech kim test yechmagan."
 
@@ -263,7 +263,7 @@ def format_stats(stats: Dict, test: Test) -> str:
     text += f"❓ Savollar soni: {test.total_questions} ta\n"
 
     if rasch_available:
-        text += f"📐 Baholash: <b>Rasch modeli</b>\n"
+        text += f"📐 Baholash: <b>Rash modeli</b>\n"
     text += "\n"
 
     # Eng oson va qiyin savollar
@@ -281,7 +281,7 @@ def format_stats(stats: Dict, test: Test) -> str:
 
 
 def format_stats_simple(stats: Dict, test: Test) -> str:
-    """Oddiy statistikani formatlash (Rasch modelsiz)"""
+    """Oddiy statistikani formatlash (Rash modelsiz)"""
     if stats['total_submissions'] == 0:
         return "📊 Hali hech kim test yechmagan."
 

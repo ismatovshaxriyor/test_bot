@@ -22,7 +22,7 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📊 Oddiy", callback_data="scoring_simple"),
-            InlineKeyboardButton("📐 Rasch", callback_data="scoring_rasch"),
+            InlineKeyboardButton("📐 Rash", callback_data="scoring_rasch"),
         ]
     ])
 
@@ -30,7 +30,7 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📝 <b>Yangi test yaratish</b>\n\n"
         "Baholash turini tanlang:\n\n"
         "📊 <b>Oddiy</b> — to'g'ri javoblar soni bo'yicha\n"
-        "📐 <b>Rasch</b> — savol qiyinligini hisobga oladi\n\n"
+        "📐 <b>Rash</b> — savol qiyinligini hisobga oladi\n\n"
         "❌ Bekor qilish: /cancel",
         reply_markup=keyboard
     )
@@ -45,7 +45,7 @@ async def scoring_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
     mode = query.data.replace("scoring_", "")  # 'simple' yoki 'rasch'
     context.user_data['scoring_mode'] = mode
 
-    mode_text = "📊 Oddiy" if mode == "simple" else "📐 Rasch"
+    mode_text = "📊 Oddiy" if mode == "simple" else "📐 Rash"
 
     await query.message.edit_text(
         f"📝 <b>Yangi test yaratish</b>\n\n"
@@ -98,7 +98,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # Adminga xabar yuborish (faqat boshqa odam yaratganda)
-    mode_text = "📊 Oddiy" if scoring_mode == "simple" else "📐 Rasch"
+    mode_text = "📊 Oddiy" if scoring_mode == "simple" else "📐 Rash"
     if ADMIN_ID and user.id != ADMIN_ID:
         try:
             await context.bot.send_message(

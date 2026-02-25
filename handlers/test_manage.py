@@ -140,7 +140,7 @@ async def show_end_confirmation(message, context, code: str, user_id: int, edit:
         return
 
     subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
-    mode_text = "📐 Rasch" if test.scoring_mode == "rasch" else "📊 Oddiy"
+    mode_text = "📐 Rash" if test.scoring_mode == "rasch" else "📊 Oddiy"
     text = (
         f"⚠️ <b>Testni yakunlashni tasdiqlang</b>\n\n"
         f"📝 Kod: <code>{code}</code>\n"
