@@ -13,17 +13,17 @@ from database import *
 
 init_db()
 
-TEST_CODE = "1DA6RP"
+TEST_ID = 1
 
 try:
-    test = Test.get(Test.unique_code == TEST_CODE)
+    test = Test.get_by_id(TEST_ID)
 except:
-    print(f"❌ Test '{TEST_CODE}' topilmadi!")
+    print(f"❌ Test ID '{TEST_ID}' topilmadi!")
     sys.exit(1)
 
 correct = test.correct_answers
 total_q = test.total_questions
-print(f"✅ Test topildi: {TEST_CODE}")
+print(f"✅ Test topildi: ID={TEST_ID}")
 print(f"   Savollar: {total_q} ta")
 print(f"   Javoblar: {correct}")
 print(f"   Scoring: {test.scoring_mode}")

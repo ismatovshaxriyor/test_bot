@@ -29,7 +29,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = f"Test {test.unique_code}"
+    ws.title = f"Test {test.id}"
 
     # Daraja ranglari
     grade_fills = {
@@ -53,13 +53,13 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
     # Sarlavha
     ws.merge_cells('A1:F1')
-    ws['A1'] = f"📊 Test natijasi — {test.unique_code}"
+    ws['A1'] = f"📊 Test natijasi — {test.id}"
     ws['A1'].font = title_font
     ws['A1'].alignment = Alignment(horizontal='center')
 
     # Ma'lumotlar
     ws['A3'] = "Test kodi:"
-    ws['B3'] = test.unique_code
+    ws['B3'] = test.id
     ws['A4'] = "Ishtirokchilar:"
     ws['B4'] = stats['total_submissions']
     ws['A5'] = "Savollar soni:"
@@ -182,7 +182,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
         ws2.column_dimensions['D'].width = 15
 
     # Faylni saqlash
-    filepath = os.path.join(tempfile.gettempdir(), f"test_{test.unique_code}.xlsx")
+    filepath = os.path.join(tempfile.gettempdir(), f"test_{test.id}.xlsx")
     wb.save(filepath)
     return filepath
 
@@ -224,7 +224,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
     # Sarlavha
     pdf.set_font(font_name, 'B', 16)
-    pdf.cell(0, 12, f'Test natijasi — {test.unique_code}', new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(0, 12, f'Test natijasi — {test.id}', new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(5)
 
     # Ma'lumotlar
@@ -308,7 +308,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         pdf.ln()
 
     # Faylni saqlash
-    filepath = os.path.join(tempfile.gettempdir(), f"test_{test.unique_code}.pdf")
+    filepath = os.path.join(tempfile.gettempdir(), f"test_{test.id}.pdf")
     pdf.output(filepath)
     return filepath
 
@@ -398,7 +398,7 @@ def export_chart(stats: Dict, test: Test) -> str:
         ax.spines[spine].set_visible(False)
 
     # Sarlavha
-    ax.set_title(f'Test {test.unique_code} — Savollar qiyinligi tahlili',
+    ax.set_title(f'Test {test.id} — Savollar qiyinligi tahlili',
                  fontsize=15, fontweight='bold', pad=15)
 
     # Legenda
@@ -420,7 +420,7 @@ def export_chart(stats: Dict, test: Test) -> str:
     plt.tight_layout()
 
     # Faylni saqlash
-    filepath = os.path.join(tempfile.gettempdir(), f"chart_{test.unique_code}.png")
+    filepath = os.path.join(tempfile.gettempdir(), f"chart_{test.id}.png")
     fig.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     return filepath

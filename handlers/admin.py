@@ -319,7 +319,7 @@ async def tests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for test in tests:
         status = "🟢" if test.is_active else "🔴"
-        text += f"{status} <code>{test.unique_code}</code> - {test.total_questions} savol\n"
+        text += f"{status} <code>{test.id}</code> - {test.total_questions} savol\n"
 
     total = Test.select().count()
     text += f"\n<b>Jami:</b> {total} ta"

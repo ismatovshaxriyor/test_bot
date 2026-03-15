@@ -38,12 +38,13 @@ async def stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_stats(message, context, code: str, user_id: int, edit: bool = False):
-    """Statistikani ko'rsatish"""
     # Testni topish
     try:
-        test = Test.get(Test.unique_code == code)
+        if not str(code).isdigit():
+            raise Test.DoesNotExist
+        test = Test.get_by_id(int(code))
     except Test.DoesNotExist:
-        text = f"❌ '{code}' kodli test topilmadi!"
+        text = f"❌ '{code}' test topilmadi!"
         if edit:
             await message.edit_text(text)
         else:
@@ -64,7 +65,7 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
         subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
         text = (
             f"📊 <b>Test statistikasi</b>\n\n"
-            f"📝 Kod: <code>{test.unique_code}</code>\n"
+            f"📝 Test kodi: <code>{test.id}</code>\n"
             f"❓ Savollar soni: {test.total_questions} ta\n"
             f"👥 Ishtirokchilar: {subs_count} ta\n\n"
             f"🟢 Test faol\n\n"
@@ -114,9 +115,11 @@ async def end_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_end_confirmation(message, context, code: str, user_id: int, edit: bool = False):
     """Yakunlash tasdig'ini ko'rsatish"""
     try:
-        test = Test.get(Test.unique_code == code)
+        if not str(code).isdigit():
+            raise Test.DoesNotExist
+        test = Test.get_by_id(int(code))
     except Test.DoesNotExist:
-        text = f"❌ '{code}' kodli test topilmadi!"
+        text = f"❌ '{code}' test topilmadi!"
         if edit:
             await message.edit_text(text)
         else:
@@ -143,7 +146,7 @@ async def show_end_confirmation(message, context, code: str, user_id: int, edit:
     mode_text = "📐 Rash" if test.scoring_mode == "rasch" else "📊 Oddiy"
     text = (
         f"⚠️ <b>Testni yakunlashni tasdiqlang</b>\n\n"
-        f"📝 Kod: <code>{code}</code>\n"
+        f"📝 Test kodi: <code>{code}</code>\n"
         f"👥 Ishtirokchilar: {subs_count} ta\n"
         f"📐 Baholash: {mode_text}\n\n"
         f"Yakunlangandan keyin hech kim bu testni yecha olmaydi."
@@ -164,9 +167,11 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.effective_user
 
     try:
-        test = Test.get(Test.unique_code == code)
+        if not str(code).isdigit():
+            raise Test.DoesNotExist
+        test = Test.get_by_id(int(code))
     except Test.DoesNotExist:
-        await query.message.edit_text(f"❌ '{code}' kodli test topilmadi!")
+        await query.message.edit_text(f"❌ '{code}' test topilmadi!")
         return
 
     if test.creator.telegram_id != user.id and user.id != ADMIN_ID:
@@ -200,7 +205,7 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=f"📢 <b>Test yakunlandi!</b>\n\n"
-                     f"📝 Kod: <code>{code}</code>\n"
+                     f"📝 Test: <code>{code}</code>\n"
                      f"👤 Yaratuvchi: {test.creator.full_name}\n"
                      f"👥 Ishtirokchilar: {stats['total_submissions']} ta",
                 parse_mode="HTML"
@@ -266,9 +271,11 @@ async def test_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.effective_user
 
     try:
-        test = Test.get(Test.unique_code == code)
+        if not str(code).isdigit():
+            raise Test.DoesNotExist
+        test = Test.get_by_id(int(code))
     except Test.DoesNotExist:
-        await query.message.edit_text(f"❌ '{code}' kodli test topilmadi!")
+        await query.message.edit_text(f"❌ '{code}' test topilmadi!")
         return
 
     if test.creator.telegram_id != user.id and user.id != ADMIN_ID:
@@ -325,7 +332,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text += "<b>So'nggi natijalar:</b>\n"
     for sub in sorted(submissions, key=lambda s: s.submitted_at, reverse=True)[:5]:
-        text += f"  • <code>{sub.test.unique_code}</code>: {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
+        text += f"  • <code>{sub.test.id}</code>: {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
 
     await update.message.reply_html(text, reply_markup=main_menu_keyboard())
 
@@ -342,9 +349,11 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     try:
-        test = Test.get(Test.unique_code == code)
+        if not str(code).isdigit():
+            raise Test.DoesNotExist
+        test = Test.get_by_id(int(code))
     except Test.DoesNotExist:
-        await query.message.reply_text(f"❌ '{code}' kodli test topilmadi!")
+        await query.message.reply_text(f"❌ '{code}' test topilmadi!")
         return
 
     if test.creator.telegram_id != user.id and user.id != ADMIN_ID:

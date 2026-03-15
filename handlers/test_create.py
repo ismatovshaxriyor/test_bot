@@ -6,7 +6,6 @@ from telegram.ext import (
 )
 
 from database import get_or_create_user, Test
-from utils import generate_unique_code
 from config import ADMIN_ID
 from keyboards import test_created_keyboard, main_menu_keyboard
 from membership import membership_required
@@ -82,20 +81,18 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         full_name=user.full_name or user.first_name
     )
 
-    # Unikal kod yaratish
-    unique_code = generate_unique_code()
-
     # Baholash turini olish
     scoring_mode = context.user_data.get('scoring_mode', 'simple')
 
     # Testni saqlash
     test = Test.create(
-        unique_code=unique_code,
         correct_answers=answers,
         creator=db_user,
         is_active=True,
         scoring_mode=scoring_mode
     )
+
+    test_id = str(test.id)
 
     # Adminga xabar yuborish (faqat boshqa odam yaratganda)
     mode_text = "📊 Oddiy" if scoring_mode == "simple" else "📐 Rash"
@@ -105,7 +102,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=ADMIN_ID,
                 text=f"📢 <b>Yangi test yaratildi!</b>\n\n"
                      f"👤 Yaratuvchi: {db_user.full_name or db_user.username}\n"
-                     f"📝 Kod: <code>{unique_code}</code>\n"
+                     f"📝 Kod: <code>{test_id}</code>\n"
                      f"❓ Savollar: {len(answers)} ta\n"
                      f"📐 Baholash: {mode_text}",
                 parse_mode="HTML"
@@ -119,11 +116,11 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_html(
         f"✅ <b>Test yaratildi!</b>\n\n"
-        f"📝 Unikal kod: <code>{unique_code}</code>\n"
+        f"📝 Test kodi: <code>{test_id}</code>\n"
         f"❓ Savollar soni: {len(answers)} ta\n"
         f"📐 Baholash: {mode_text}\n\n"
         f"Bu kodni boshqalarga yuboring!",
-        reply_markup=test_created_keyboard(unique_code, bot_username, len(answers))
+        reply_markup=test_created_keyboard(test_id, bot_username, len(answers))
     )
 
     # user_data ni tozalash

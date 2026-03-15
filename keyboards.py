@@ -53,8 +53,8 @@ def my_tests_keyboard(tests):
         status = "🟢" if test.is_active else "🔴"
         keyboard.append([
             InlineKeyboardButton(
-                f"{status} {test.unique_code} ({test.total_questions} savol)",
-                callback_data=f"test_{test.unique_code}"
+                f"{status} {test.id} ({test.total_questions} savol)",
+                callback_data=f"test_{test.id}"
             )
         ])
     return InlineKeyboardMarkup(keyboard)

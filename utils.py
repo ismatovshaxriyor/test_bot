@@ -6,16 +6,6 @@ from typing import Tuple, List, Dict
 from database import Test, TestSubmission
 
 
-def generate_unique_code(length: int = 6) -> str:
-    """Unikal kod generatsiya qilish"""
-    while True:
-        # Harflar va raqamlardan kod yaratish
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
-        # Tekshirish - bunday kod mavjud emasligini
-        if not Test.select().where(Test.unique_code == code).exists():
-            return code
-
-
 def check_answers(correct: str, submitted: str) -> Tuple[int, int, List[bool]]:
     """
     Javoblarni tekshirish
@@ -258,7 +248,7 @@ def format_stats(stats: Dict, test: Test) -> str:
     rasch_available = rasch.get('rasch_available', False)
 
     text = f"📊 <b>Test statistikasi</b>\n"
-    text += f"📝 Kod: <code>{test.unique_code}</code>\n"
+    text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
     text += f"❓ Savollar soni: {test.total_questions} ta\n"
 
@@ -286,7 +276,7 @@ def format_stats_simple(stats: Dict, test: Test) -> str:
         return "📊 Hali hech kim test yechmagan."
 
     text = f"📊 <b>Test statistikasi</b>\n"
-    text += f"📝 Kod: <code>{test.unique_code}</code>\n"
+    text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
     text += f"❓ Savollar soni: {test.total_questions} ta\n"
     text += f"📊 Baholash: <b>Oddiy</b>\n\n"

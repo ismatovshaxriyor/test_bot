@@ -31,7 +31,6 @@ class User(BaseModel):
 
 class Test(BaseModel):
     """Test modeli"""
-    unique_code = CharField(unique=True, max_length=8)
     correct_answers = TextField()
     creator = ForeignKeyField(User, backref="tests")
     is_active = BooleanField(default=True)

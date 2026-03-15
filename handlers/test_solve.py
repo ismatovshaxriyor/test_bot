@@ -23,9 +23,9 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_html(
             "✍️ <b>Test yechish</b>\n\n"
-            "Test egasi sizga yuborgan <b>6 xonali kodni</b> kiriting:\n\n"
-            "💡 Kod harflar va raqamlardan iborat\n"
-            "(masalan: <code>5NI7HB</code> yoki <code>K9X2LM</code>)\n\n"
+            "Test egasi sizga yuborgan <b>test raqamini (ID)</b> kiriting:\n\n"
+            "💡 Kod faqat raqamlardan iborat\n"
+            "(masalan: <code>15</code> yoki <code>42</code>)\n\n"
             "❌ Bekor qilish: /cancel"
         )
         return WAITING_TEST_CODE
@@ -42,9 +42,13 @@ async def receive_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, code: str):
     """Test kodini qayta ishlash"""
+    if not code.isdigit():
+        await update.message.reply_text("❌ Kod faqat raqamlardan iborat bo'lishi kerak!")
+        return WAITING_TEST_CODE
+
     # Testni topish
     try:
-        test = Test.get(Test.unique_code == code)
+        test = Test.get_by_id(int(code))
     except Test.DoesNotExist:
         await update.message.reply_text(
             f"❌ '{code}' kodli test topilmadi!\n\n"
@@ -171,7 +175,7 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
             await context.bot.send_message(
                 chat_id=creator.telegram_id,
                 text=f"📢 <b>Yangi natija!</b>\n\n"
-                     f"📝 Test: <code>{test.unique_code}</code>\n"
+                     f"📝 Test: <code>{test.id}</code>\n"
                      f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
                      f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
                 parse_mode="HTML"
