@@ -76,7 +76,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     if rasch_mode:
         headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Rash ball", "Daraja"]
     else:
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Daraja"]
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)"]
 
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=row, column=col, value=header)
@@ -100,20 +100,14 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
-        else:
-            grade = get_grade(sub['percentage'])
-
-        if rasch_mode:
             ws.cell(row=r, column=6, value=sub.get('rasch_normalized', sub['percentage'])).border = thin_border
             ws.cell(row=r, column=7, value=grade).border = thin_border
-        else:
-            ws.cell(row=r, column=6, value=grade).border = thin_border
 
-        # Daraja bo'yicha rang
-        fill = grade_fills.get(grade)
-        if fill:
-            for c in range(1, len(headers) + 1):
-                ws.cell(row=r, column=c).fill = fill
+            # Daraja bo'yicha rang (faqat Rash uchun)
+            fill = grade_fills.get(grade)
+            if fill:
+                for c in range(1, len(headers) + 1):
+                    ws.cell(row=r, column=c).fill = fill
 
         # Markazlashtirish
         for c in range(1, len(headers) + 1):
@@ -129,8 +123,6 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     if rasch_mode:
         ws.column_dimensions['F'].width = 12
         ws.column_dimensions['G'].width = 10
-    else:
-        ws.column_dimensions['F'].width = 10
 
     # Savol statistikasi sahifasi
     if stats.get('question_stats'):
@@ -247,8 +239,8 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         col_widths = [10, 50, 18, 14, 22, 22, 18]
         headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Rash", "Daraja"]
     else:
-        col_widths = [10, 65, 22, 18, 28, 18]
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)", "Daraja"]
+        col_widths = [10, 75, 22, 20, 30]
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Foiz (%)"]
 
     for i, header in enumerate(headers):
         pdf.cell(col_widths[i], 8, header, border=1, fill=True, align='C')
@@ -270,27 +262,21 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         'C':  (255, 127, 127),  # Qizil
         '-':  (217, 217, 217),  # Kulrang
     }
-
     for idx, sub in enumerate(submissions):
-        if rasch_mode:
-            grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
-        else:
-            grade = get_grade(sub['percentage'])
-
-        # Daraja bo'yicha rang
-        color = grade_colors.get(grade)
-        if color:
-            pdf.set_fill_color(*color)
-            fill = True
-        else:
-            fill = False
-
         num = idx + 1
         name = sub['user'][:25]  # Ismni qisqartirish
+
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
+            # Daraja bo'yicha rang
+            color = grade_colors.get(grade)
+            if color:
+                pdf.set_fill_color(*color)
+                fill = True
+            else:
+                fill = False
         else:
-            grade = get_grade(sub['percentage'])
+            fill = False
 
         pdf.cell(col_widths[0], 7, str(num), border=1, fill=fill, align='C')
         pdf.cell(col_widths[1], 7, name, border=1, fill=fill)
@@ -302,8 +288,6 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
             rasch_val = sub.get('rasch_normalized', sub['percentage'])
             pdf.cell(col_widths[5], 7, str(rasch_val), border=1, fill=fill, align='C')
             pdf.cell(col_widths[6], 7, grade, border=1, fill=fill, align='C')
-        else:
-            pdf.cell(col_widths[5], 7, grade, border=1, fill=fill, align='C')
 
         pdf.ln()
 
