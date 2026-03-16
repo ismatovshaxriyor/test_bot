@@ -85,12 +85,17 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     scoring_mode = context.user_data.get('scoring_mode', 'simple')
 
     # Testni saqlash
-    test = Test.create(
-        correct_answers=answers,
-        creator=db_user,
-        is_active=True,
-        scoring_mode=scoring_mode
-    )
+    try:
+        test = Test.create(
+            correct_answers=answers,
+            creator=db_user,
+            is_active=True,
+            scoring_mode=scoring_mode
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Xatolik yuz berdi! DB yangilanmagan bo'lishi mumkin.\n\n`{str(e)}`", parse_mode="Markdown")
+        context.user_data.pop('scoring_mode', None)
+        return ConversationHandler.END
 
     test_id = str(test.id)
 
