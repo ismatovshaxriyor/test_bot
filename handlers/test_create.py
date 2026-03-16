@@ -110,9 +110,8 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # Bot username olish
-    bot_info = await context.bot.get_me()
-    bot_username = bot_info.username
+    # Bot username olish (get_me ni o'rniga to'g'ridan-to'g'ri property)
+    bot_username = context.bot.username
 
     await update.message.reply_html(
         f"✅ <b>Test yaratildi!</b>\n\n"
