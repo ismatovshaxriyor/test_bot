@@ -243,6 +243,102 @@ def get_answer_review(correct: str, submitted: str) -> List[Dict]:
 
 # ============ RASCH MODEL ============
 
+
+def _sigmoid(x: float) -> float:
+    """Numerik barqaror sigmoid"""
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+def _fit_rasch_jmle(
+    response_matrix: List[List[int]],
+    max_iter: int = 250,
+    tol: float = 1e-4,
+) -> tuple[List[float], List[float], bool]:
+    """
+    Dichotomous Rasch (1PL) uchun JMLE.
+
+    Returns:
+        (person_thetas, item_difficulties, converged)
+    """
+    num_persons = len(response_matrix)
+    num_items = len(response_matrix[0]) if num_persons else 0
+    if num_persons == 0 or num_items == 0:
+        return [], [], False
+
+    # Boshlang'ich nuqta: 0/100 holatlarda cheksizlikdan qochish uchun 0.5 correction
+    thetas: List[float] = []
+    for row in response_matrix:
+        raw = sum(row)
+        p = (raw + 0.5) / (num_items + 1.0)
+        thetas.append(math.log(p / (1.0 - p)))
+
+    betas: List[float] = []
+    for j in range(num_items):
+        raw = sum(response_matrix[i][j] for i in range(num_persons))
+        p = (raw + 0.5) / (num_persons + 1.0)
+        betas.append(-math.log(p / (1.0 - p)))
+
+    converged = False
+
+    for _ in range(max_iter):
+        max_change = 0.0
+
+        # Person ability (theta) update
+        for i in range(num_persons):
+            theta = thetas[i]
+            score = 0.0
+            info = 0.0
+            for j in range(num_items):
+                p = _sigmoid(theta - betas[j])
+                x = response_matrix[i][j]
+                score += (x - p)
+                info += p * (1.0 - p)
+
+            if info < 1e-9:
+                continue
+
+            delta = max(min(score / info, 1.0), -1.0)
+            updated = max(min(theta + delta, 6.0), -6.0)
+            max_change = max(max_change, abs(updated - theta))
+            thetas[i] = updated
+
+        # Item difficulty (beta) update
+        for j in range(num_items):
+            beta = betas[j]
+            score = 0.0
+            info = 0.0
+            for i in range(num_persons):
+                p = _sigmoid(thetas[i] - beta)
+                x = response_matrix[i][j]
+                score += (x - p)
+                info += p * (1.0 - p)
+
+            if info < 1e-9:
+                continue
+
+            # beta uchun yo'nalish teskari: dL/dbeta = -(x - p)
+            delta = max(min(score / info, 1.0), -1.0)
+            updated = max(min(beta - delta, 6.0), -6.0)
+            max_change = max(max_change, abs(updated - beta))
+            betas[j] = updated
+
+        # Identifiability: item qiyinliklar o'rtachasi 0 bo'lsin.
+        # Farq (theta - beta) saqlanishi uchun ikkalasidan ham bir xil qiymat ayriladi.
+        center = sum(betas) / num_items
+        if abs(center) > 1e-12:
+            betas = [b - center for b in betas]
+            thetas = [t - center for t in thetas]
+
+        if max_change < tol:
+            converged = True
+            break
+
+    return thetas, betas, converged
+
 def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     """
     Rash modeli bo'yicha ball hisoblash
@@ -282,46 +378,27 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         ]
         response_matrix.append(row)
 
-    # 1-QADAM: Savol qiyinligi (Rasch logit)
-    question_difficulties = []
-    question_weights = []
+    person_thetas, item_difficulties, converged = _fit_rasch_jmle(response_matrix)
+    if not person_thetas or not item_difficulties:
+        return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
 
-    for q in range(total_questions):
-        raw_correct = sum(response_matrix[s][q] for s in range(total_subs))
-        correct_count = min(max(raw_correct, 0.5), total_subs - 0.5)
-        wrong_count = total_subs - correct_count
-        difficulty = math.log(wrong_count / correct_count)
-        question_difficulties.append(round(difficulty, 2))
-
-        # UI/export bilan moslik uchun 0-1 oralig'idagi og'irlik ko'rsatkichi
-        weight = 1 / (1 + math.exp(-difficulty))
-        question_weights.append(round(weight, 2))
-
-    # 2-QADAM: Foydalanuvchi qobiliyati (theta, logit)
-    theta_scores = []
-    raw_scores = []
-    for s in range(total_subs):
-        raw_correct = sum(response_matrix[s])
-        corrected = min(max(raw_correct, 0.5), total_questions - 0.5)
-        theta = math.log(corrected / (total_questions - corrected))
-        theta_scores.append(theta)
-        raw_scores.append(raw_correct)
-
-    min_theta = min(theta_scores)
-    max_theta = max(theta_scores)
-    theta_span = max_theta - min_theta
+    question_difficulties = [round(beta, 2) for beta in item_difficulties]
+    # Katta qiymat = qiyinroq savol
+    question_weights = [round(_sigmoid(beta), 2) for beta in item_difficulties]
 
     user_scores = []
 
     for s, sub in enumerate(submissions):
-        correct_count = raw_scores[s]
+        correct_count = sum(response_matrix[s])
         percentage = round((correct_count / total_questions) * 100, 1) if total_questions > 0 else 0
-        theta = theta_scores[s]
+        theta = person_thetas[s]
 
-        if theta_span > 0:
-            rasch_normalized = round(((theta - min_theta) / theta_span) * 100, 1)
-        else:
-            rasch_normalized = percentage
+        # Testdagi item qiyinliklarini hisobga olgan holda kutilgan ball (0..100)
+        expected_pct = (
+            sum(_sigmoid(theta - beta) for beta in item_difficulties) / total_questions * 100.0
+            if total_questions > 0 else 0.0
+        )
+        rasch_normalized = round(expected_pct, 1)
 
         user_scores.append({
             'user': sub.user.full_name or sub.user.username or f"ID: {sub.user.telegram_id}",
@@ -333,13 +410,14 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             'rasch_normalized': rasch_normalized
         })
 
-    # Rash ball bo'yicha saralash (kattadan kichikga)
-    user_scores.sort(key=lambda x: (-x['rasch_normalized'], -x['percentage']))
+    # Asosiy tartib: ability logit (rasch_score), keyin raw natija
+    user_scores.sort(key=lambda x: (-x['rasch_score'], -x['correct'], -x['percentage']))
 
     return {
         'rasch_available': True,
         'question_difficulties': question_difficulties,
         'question_weights': question_weights,
+        'rasch_converged': converged,
         'user_scores': user_scores
     }
 

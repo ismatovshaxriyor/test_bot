@@ -12,7 +12,7 @@ from utils import (
     calculate_rasch_scores,
     get_answer_review,
 )
-from export import export_to_excel, export_to_pdf, export_chart
+from export import export_to_excel, export_to_pdf, export_chart, get_grade
 from config import ADMIN_ID
 from keyboards import (
     main_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
@@ -84,7 +84,12 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
 
         if test.scoring_mode == "rasch":
             score = rasch_scores_by_user.get(user_id, float(submission.percentage))
-            result_line = f"📐 <b>Natijangiz:</b> {round(score, 1)}/100 ball"
+            rounded_score = round(score, 1)
+            grade = get_grade(rounded_score)
+            result_line = (
+                f"📐 <b>Natijangiz:</b> {rounded_score} ball\n"
+                f"🏅 <b>Daraja:</b> {grade}"
+            )
         else:
             result_line = (
                 f"✅ <b>Natijangiz:</b> "
