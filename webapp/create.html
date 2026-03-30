@@ -246,19 +246,30 @@
     </div>
 
     <script>
-        const BOT_USERNAME = {{ (bot_username|default('', true))|tojson }};
-        const BOT_LINK = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}` : "https://t.me/";
         const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
-        const hasTelegramContext = Boolean(
-            tgApp && (tgApp.initData || (tgApp.initDataUnsafe && tgApp.initDataUnsafe.user && tgApp.initDataUnsafe.user.id))
-        );
-
-        if (!hasTelegramContext) {
-            window.location.replace(BOT_LINK);
-            throw new Error("Telegram context required");
-        }
-
-        const WebApp = tgApp;
+        const WebApp = tgApp || {
+            expand() {},
+            ready() {},
+            close() {},
+            sendData() {},
+            showAlert(message) { alert(message); },
+            themeParams: {},
+            initDataUnsafe: {},
+            colorScheme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+            HapticFeedback: {
+                selectionChanged() {},
+                notificationOccurred() {}
+            },
+            MainButton: {
+                text: '',
+                color: '#8b5cf6',
+                show() {},
+                hide() {},
+                showProgress() {},
+                hideProgress() {},
+                onClick() {}
+            }
+        };
         WebApp.expand();
         WebApp.ready();
 
