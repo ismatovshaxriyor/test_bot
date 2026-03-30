@@ -15,7 +15,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 DATABASE_PATH = "test_bot.db"
 
 # WebApp server url
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://example.com")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
 WEBAPP_VERSION = os.getenv("WEBAPP_VERSION", "1")
 
 # Bot username (@siz yozsangiz ham tozalanadi)
