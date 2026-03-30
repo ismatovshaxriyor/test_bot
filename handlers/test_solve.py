@@ -6,12 +6,14 @@ from telegram.ext import (
 )
 
 from database import get_or_create_user, Test, TestSubmission
-from utils import check_answers, format_result
+from utils import check_answers
 from config import ADMIN_ID
 from keyboards import main_menu_keyboard
 from membership import membership_required
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from config import WEBAPP_URL, WEBAPP_VERSION
+import json
 
-# Conversation states
 WAITING_TEST_CODE = 0
 WAITING_USER_ANSWERS = 1
 
@@ -86,9 +88,8 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     ).first()
 
     if existing:
-        await update.message.reply_html(
-            f"⚠️ Siz bu testni avval yechgansiz!\n\n"
-            f"Natijangiz: {existing.correct_count}/{existing.total_count} ({existing.percentage}%)",
+        await update.message.reply_text(
+            "⚠️ Siz bu testni allaqachon ishlagansiz!",
             reply_markup=main_menu_keyboard()
         )
         return ConversationHandler.END
@@ -97,12 +98,18 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     context.user_data['current_test'] = test
     context.user_data['db_user'] = db_user
 
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✍️ Testni yechish 🚀", web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?test_id={test.id}&v={WEBAPP_VERSION}"))]
+    ])
+
     await update.message.reply_html(
         f"📝 <b>Test: {code}</b>\n\n"
         f"❓ Savollar soni: {test.total_questions} ta\n\n"
         f"Javoblaringizni kiriting.\n"
         f"Masalan: <code>{'a' * min(test.total_questions, 10)}</code>\n\n"
-        f"❌ Bekor qilish: /cancel"
+        f"Yoki pastdagi tugma orqali ishlashingiz mumkin\n\n"
+        f"❌ Bekor qilish: /cancel",
+        reply_markup=keyboard
     )
 
     return WAITING_USER_ANSWERS
@@ -128,6 +135,13 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=main_menu_keyboard()
         )
         return ConversationHandler.END
+
+    if test.correct_answers and test.correct_answers.startswith("[{"):
+        await update.message.reply_html(
+            "⚠️ <b>Ushbu testni faqat matn yozib yechib bo'lmaydi!</b>\n"
+            "Testda ochiq savollar bor. Iltimos, yuqoridagi <b>🚀 Testni yechish</b> tugmasidan foydalaning!"
+        )
+        return WAITING_USER_ANSWERS
 
     if not update.message or not update.message.text:
         await update.message.reply_text("❌ Faqat matn yuboring!")
@@ -164,9 +178,12 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
         total_count=total
     )
 
-    # Natijani formatlash va yuborish
-    result_text = format_result(correct_count, total, results)
-    await update.message.reply_html(result_text, reply_markup=main_menu_keyboard())
+    # Foydalanuvchiga qabul qilinganini yuborish (yakuniy natija test yakunlangach yuboriladi)
+    await update.message.reply_html(
+        "✅ <b>Javobingiz qabul qilindi.</b>\n\n"
+        "📌 Natija test yakunlangach yuboriladi.",
+        reply_markup=main_menu_keyboard()
+    )
 
     # Test egasiga xabar yuborish (faqat boshqa odam yechganda)
     if test.creator.telegram_id != db_user.telegram_id:
@@ -201,23 +218,108 @@ async def cancel_solve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """WebApp orqali kelgan barcha amallarni qabul qilish (router)"""
+    try:
+        data = json.loads(update.message.web_app_data.data)
+        action = data.get("action")
+        
+        if action == "create_test":
+            # Test yaratish — alohida handler ga yo'naltirish
+            from handlers.test_create import webapp_create_handler
+            return await webapp_create_handler(update, context)
+        
+        if action != "submit_test":
+            return
+            
+        test_id = data.get("test_id")
+        answers = data.get("answers", "")
+
+        if not str(test_id).isdigit():
+            await update.message.reply_text("❌ Test kodi noto'g'ri formatda!")
+            return
+
+        if not isinstance(answers, str):
+            answers = str(answers or "")
+        
+        # User auth details
+        telegram_id = update.effective_user.id
+        db_user = get_or_create_user(
+            telegram_id=telegram_id,
+            username=update.effective_user.username,
+            full_name=update.effective_user.full_name
+        )
+        
+        try:
+            test = Test.get_by_id(int(test_id))
+        except Test.DoesNotExist:
+            await update.message.reply_text("❌ Kutilmagan xatolik: Test topilmadi.")
+            return
+            
+        if not test.is_active:
+            await update.message.reply_text("❌ Uzr, bu test allaqachon yakunlangan!")
+            return
+
+        if test.creator.telegram_id == telegram_id:
+            await update.message.reply_text("❌ O'zingiz yaratgan testni yecha olmaysiz!")
+            return
+            
+        existing = TestSubmission.select().where(
+            (TestSubmission.test == test) & 
+            (TestSubmission.user == db_user)
+        ).first()
+        
+        if existing:
+            await update.message.reply_text(
+                "⚠️ Siz bu testni allaqachon ishlagansiz!"
+            )
+            return
+            
+        # check
+        is_mixed = test.correct_answers and test.correct_answers.startswith("[{")
+        safe_answers = answers.strip()
+        if not is_mixed:
+            safe_answers = safe_answers.lower()
+
+        correct_count, total, _ = check_answers(test.correct_answers, safe_answers)
+
+        submission = TestSubmission.create(
+            test=test,
+            user=db_user,
+            answers=safe_answers,
+            correct_count=correct_count,
+            total_count=total
+        )
+
+        # Foydalanuvchiga qabul qilinganini yuborish (yakuniy natija test yakunlangach yuboriladi)
+        await update.message.reply_html(
+            "✅ <b>Javobingiz qabul qilindi.</b>\n\n"
+            "📌 Natija test yakunlangach yuboriladi."
+        )
+
+        # Test egasiga xabar yuborish
+        if test.creator.telegram_id != db_user.telegram_id:
+            try:
+                creator = test.creator
+                await context.bot.send_message(
+                    chat_id=creator.telegram_id,
+                    text=f"📢 <b>Yangi natija!</b>\n\n"
+                     f"📝 Test: <code>{test.id}</code>\n"
+                     f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                     f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+    except json.JSONDecodeError:
+        print("WEBAPP DATA: JSONDecodeError")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text(f"Xatolik: {e}")
+
+
 def get_handlers():
-    """Handlerlarni qaytarish"""
-    conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler("solve", solve_command, filters=filters.ChatType.PRIVATE),
-            MessageHandler(filters.ChatType.PRIVATE & filters.Regex(r'^✍️ Test yechish$'), solve_command),
-        ],
-        states={
-            WAITING_TEST_CODE: [
-                MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND & ~filters.Regex(r'^(📝 Test yaratish|✍️ Test yechish|📋 Mening testlarim|📊 Mening statistikam)$'), receive_test_code)
-            ],
-            WAITING_USER_ANSWERS: [
-                MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND & ~filters.Regex(r'^(📝 Test yaratish|✍️ Test yechish|📋 Mening testlarim|📊 Mening statistikam)$'), receive_user_answers)
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_solve)],
-    )
-
-    return [conv_handler]
-
+    """Yechish oqimi to'liq WebApp ga ko'chirilgan."""
+    return [MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webapp_receive_data)]

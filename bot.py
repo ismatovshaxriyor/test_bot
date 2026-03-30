@@ -13,7 +13,7 @@ from database import init_db
 # Handlerlarni import qilish
 from handlers import start, test_create, test_solve, test_manage, admin, inline
 from membership import check_membership_callback
-from telegram.ext import CallbackQueryHandler
+from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
 # Logging sozlash
 logging.basicConfig(

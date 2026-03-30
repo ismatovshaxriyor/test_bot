@@ -43,7 +43,14 @@ class Test(BaseModel):
 
     @property
     def total_questions(self):
-        """Savollar soni"""
+        """Savollar soni (Oddiy string yoki JSON)"""
+        if self.correct_answers and self.correct_answers.startswith("[{"):
+            import json
+            try:
+                data = json.loads(self.correct_answers)
+                return len(data)
+            except:
+                pass
         return len(self.correct_answers)
 
 

@@ -12,14 +12,14 @@ HELP_TEXT = """
 
 <b>📝 Test yaratish:</b>
 1. "📝 Test yaratish" tugmasini bosing
-2. To'g'ri javoblarni kiriting (masalan: abbacabbac)
-3. Bot sizga unikal kod beradi
+2. Ochilgan oynada yopiq/ochiq savollarni kiriting
+3. Yakunlang — bot sizga test kodini yuboradi
 4. Bu kodni boshqalarga yuboring
 
 <b>✍️ Test yechish:</b>
 1. "✍️ Test yechish" tugmasini bosing
-2. Test kodini kiriting
-3. Javoblaringizni yuboring
+2. Ochilgan oynada test kodini kiriting
+3. Javoblaringizni belgilang/kiriting
 4. Natijangizni ko'ring
 
 <b>📋 Mening testlarim:</b>
@@ -82,5 +82,3 @@ def get_handlers():
             handle_menu_buttons
         ),
     ]
-
-

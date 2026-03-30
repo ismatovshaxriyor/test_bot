@@ -1,11 +1,20 @@
-"""Keyboard tugmalari"""
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from config import WEBAPP_URL, WEBAPP_VERSION
 
 
 def main_menu_keyboard():
     """Asosiy menyu"""
     keyboard = [
-        [KeyboardButton("📝 Test yaratish"), KeyboardButton("✍️ Test yechish")],
+        [
+            KeyboardButton(
+                "📝 Test yaratish",
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}")
+            ),
+            KeyboardButton(
+                "✍️ Test yechish",
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?v={WEBAPP_VERSION}")
+            )
+        ],
         [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -18,7 +27,7 @@ def test_created_keyboard(test_code: str, bot_username: str = "", total_question
     share_text = (
         f"🎯 Test Yechish Taklifi\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"� Test kodi: {test_code}\n"
+        f"📝 Test kodi: {test_code}\n"
         f"❓ Savollar: {total_questions} ta\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📲 Qanday yechish:\n"
@@ -31,6 +40,7 @@ def test_created_keyboard(test_code: str, bot_username: str = "", total_question
 
     keyboard = [
         [InlineKeyboardButton("📤 Ulashish", url=share_url)],
+        [InlineKeyboardButton("✍️ Testni yechish 🚀", web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?test_id={test_code}&v={WEBAPP_VERSION}"))],
         [InlineKeyboardButton("📊 Statistika", callback_data=f"stats_{test_code}")],
         [InlineKeyboardButton("🔚 Yakunlash", callback_data=f"end_{test_code}")]
     ]

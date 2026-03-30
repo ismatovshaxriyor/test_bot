@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Javoblarni kiritish</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/mathlive"></script>
+
+    <style>
+        body {
+            background-color: var(--tg-theme-bg-color, #f3f4f6);
+            color: var(--tg-theme-text-color, #1f2937);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            transition: all 0.3s ease;
+        }
+        .option-btn {
+            border: 1px solid #d1d5db;
+            color: #374151;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        @media (prefers-color-scheme: dark) {
+            .option-btn {
+                border-color: #4b5563;
+                color: #e5e7eb;
+            }
+        }
+        .option-btn.selected {
+            background-color: var(--tg-theme-button-color, #3b82f6);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border-color: var(--tg-theme-button-color, #3b82f6);
+            transform: scale(1.05);
+            font-weight: 700;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.82);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        [data-theme='dark'] .glass-panel {
+            background: rgba(31, 41, 55, 0.82);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .open-field {
+            width: 100%;
+            min-height: 46px;
+            border: 1.5px solid #d1d5db;
+            border-radius: 10px;
+            padding: 8px 10px;
+            background: #081a33;
+            color: #ffffff;
+            transition: border-color 0.15s;
+        }
+        .open-field::placeholder {
+            color: rgba(255, 255, 255, 0.72);
+        }
+        .open-field:focus-within {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 2px rgba(139,92,246,0.15);
+        }
+        [data-theme='dark'] .open-field {
+            border-color: #4b5563;
+            background: #081a33;
+            color: #ffffff;
+        }
+        .open-field::part(virtual-keyboard-toggle),
+        .open-field::part(menu-toggle) {
+            margin: 0;
+            padding-inline: 6px;
+        }
+        .open2-pair {
+            display: grid;
+            grid-template-columns: 1fr;
+            row-gap: 0;
+            column-gap: 8px;
+        }
+        @media (min-width: 640px) {
+            .open2-pair {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                row-gap: 6px;
+            }
+        }
+        @media (max-width: 480px) {
+            .open-field::part(virtual-keyboard-toggle),
+            .open-field::part(menu-toggle) {
+                padding-inline: 3px;
+                transform: translateX(4px);
+            }
+            .open-field::part(virtual-keyboard-toggle) {
+                margin-right: -6px;
+            }
+            .open-field::part(menu-toggle) {
+                margin-left: -6px;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 pb-24">
+
+    {% if error %}
+    <div class="glass-panel max-w-md mx-auto p-6 rounded-2xl text-center shadow-lg mt-10">
+        <h2 class="text-2xl font-bold text-red-500 mb-4">Xatolik!</h2>
+        <p class="text-lg">{{ error }}</p>
+    </div>
+    {% else %}
+
+    <div class="glass-panel max-w-md mx-auto p-6 rounded-3xl shadow-lg mt-2 relative overflow-hidden">
+        <div class="absolute -top-10 -right-10 w-24 h-24 bg-blue-400 rounded-full opacity-10 blur-xl"></div>
+        <div class="absolute -bottom-10 -left-10 w-32 h-32 bg-purple-400 rounded-full opacity-10 blur-xl"></div>
+
+        <h1 class="text-2xl font-extrabold text-center mb-6 tracking-tight">Javoblarni kiriting</h1>
+
+        <div class="flex justify-between items-center bg-blue-50/50 p-3 rounded-xl mb-4 border border-blue-100 dark:border-gray-700 dark:bg-gray-800/50">
+            <span class="font-semibold opacity-80">Test kodi:</span>
+            <span id="test-code-badge" class="font-black text-blue-600 dark:text-blue-400">#-</span>
+        </div>
+
+        <div id="test-loader" class="mb-4 rounded-xl border border-blue-200/60 dark:border-slate-700 p-3 bg-white/60 dark:bg-slate-900/30">
+            <p class="text-sm font-semibold mb-2">Test kodini kiriting</p>
+            <div class="space-y-2">
+                <input
+                    id="test-code-input"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="Masalan: 15"
+                    class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none"
+                />
+                <button
+                    id="load-test-btn"
+                    class="w-full px-3 py-2 rounded-lg bg-blue-600 text-white font-semibold active:scale-95"
+                    type="button"
+                >
+                    Ochish
+                </button>
+            </div>
+        </div>
+
+        <div id="meta-container" class="mb-4"></div>
+
+        <div id="questions-container" class="space-y-4"></div>
+    </div>
+
+    {% endif %}
+
+    <script>
+        const BOT_USERNAME = {{ (bot_username|default('', true))|tojson }};
+        const BOT_LINK = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}` : "https://t.me/";
+        const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+        const hasTelegramContext = Boolean(
+            tgApp && (tgApp.initData || (tgApp.initDataUnsafe && tgApp.initDataUnsafe.user && tgApp.initDataUnsafe.user.id))
+        );
+
+        if (!hasTelegramContext) {
+            window.location.replace(BOT_LINK);
+            throw new Error("Telegram context required");
+        }
+
+        const WebApp = tgApp;
+        WebApp.expand();
+        WebApp.ready();
+
+        if (WebApp.colorScheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.classList.add('dark');
+        }
+
+        let testStructure = {{ test_structure|safe }};
+        let totalQuestions = {{ total_questions }};
+        let testId = {{ test_id }};
+        let isMixedTest = {{ is_mixed|tojson }};
+        const errorMessage = "{{ error }}";
+        const telegramUserId = Number(
+            (WebApp.initDataUnsafe && WebApp.initDataUnsafe.user && WebApp.initDataUnsafe.user.id) || 0
+        );
+        let answers = [];
+
+        function normalizeQuestionType(raw) {
+            const value = String(raw || 'closed').trim().toLowerCase();
+            if (value === 'closed4' || value === 'closed6' || value === 'open2' || value === 'open' || value === 'closed') {
+                return value;
+            }
+            if (value.startsWith('closed')) {
+                return 'closed';
+            }
+            if (value.startsWith('open')) {
+                return 'open';
+            }
+            return 'closed';
+        }
+
+        function isClosedType(type) {
+            return type === 'closed' || type === 'closed4' || type === 'closed6';
+        }
+
+        function ensureStructure() {
+            if (!Array.isArray(testStructure)) {
+                testStructure = [];
+            }
+            if (testStructure.length === 0 && totalQuestions > 0) {
+                testStructure = Array.from({ length: totalQuestions }, () => ({ type: 'closed' }));
+            }
+        }
+
+        function buildAnswersArray() {
+            ensureStructure();
+            return Array.from({ length: totalQuestions }, (_, idx) => {
+                const qType = normalizeQuestionType(testStructure[idx] ? testStructure[idx].type : 'closed');
+                if (qType === 'open2') {
+                    return { a: '', b: '' };
+                }
+                return '';
+            });
+        }
+
+        function hasLoadedTest() {
+            return Number(testId) > 0 && Number(totalQuestions) > 0;
+        }
+
+        function updateHeaderCode() {
+            const badge = document.getElementById('test-code-badge');
+            if (!badge) return;
+
+            if (hasLoadedTest()) {
+                badge.textContent = `#${testId}`;
+            } else {
+                badge.textContent = '#-';
+            }
+        }
+
+        function toggleLoader() {
+            const loader = document.getElementById('test-loader');
+            if (!loader) return;
+
+            loader.style.display = hasLoadedTest() ? 'none' : 'block';
+        }
+
+        function renderMeta() {
+            const container = document.getElementById('meta-container');
+            if (!container) return;
+
+            if (!hasLoadedTest()) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let closed4Count = 0;
+            let closed6Count = 0;
+            let openCount = 0;
+            let open2Count = 0;
+
+            for (let i = 0; i < totalQuestions; i++) {
+                const qType = normalizeQuestionType(testStructure[i] ? testStructure[i].type : 'closed');
+                if (qType === 'closed6') {
+                    closed6Count += 1;
+                } else if (qType === 'open2') {
+                    open2Count += 1;
+                } else if (qType === 'open') {
+                    openCount += 1;
+                } else {
+                    closed4Count += 1;
+                }
+            }
+
+            const totalClosed = closed4Count + closed6Count;
+            const totalOpen = openCount + open2Count;
+
+            if (totalOpen === 0) {
+                container.innerHTML = `
+                    <div class="text-xs rounded-lg px-3 py-2 border border-slate-300/60 bg-slate-100/60 text-slate-700 dark:bg-slate-800/30 dark:text-slate-200 dark:border-slate-600/40">
+                        Bu testda <b>${totalClosed}</b> ta yopiq savol bor.
+                    </div>
+                `;
+                return;
+            }
+
+            const details = [];
+            if (closed6Count > 0) {
+                details.push(`${closed6Count} ta (A-F)`);
+            }
+            if (open2Count > 0) {
+                details.push(`${open2Count} ta (a/b juft)`);
+            }
+
+            const suffix = details.length > 0 ? ` Qo'shimcha: ${details.join(', ')}.` : '';
+
+            container.innerHTML = `
+                <div class="text-xs rounded-lg px-3 py-2 border border-violet-300/50 bg-violet-100/60 text-violet-900 dark:bg-violet-900/20 dark:text-violet-200 dark:border-violet-500/40">
+                    Bu testda <b>${totalClosed}</b> ta yopiq va <b>${totalOpen}</b> ta ochiq savol bor.${suffix}
+                </div>
+            `;
+        }
+
+        function renderClosedQuestion(container, idx, options) {
+            const isSixOptions = options.length === 6;
+            const qDiv = document.createElement('div');
+            qDiv.className = `flex items-center justify-between ${isSixOptions ? 'gap-1.5' : 'gap-2'} p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition`;
+
+            const numSpan = document.createElement('span');
+            numSpan.className = `font-bold ${isSixOptions ? 'w-8 text-base' : 'w-12 text-lg'}`;
+            numSpan.innerText = `${idx + 1}.`;
+            qDiv.appendChild(numSpan);
+
+            const optsDiv = document.createElement('div');
+            optsDiv.className = isSixOptions
+                ? 'flex flex-1 gap-1 justify-end items-center flex-nowrap'
+                : 'flex flex-1 gap-2 justify-end flex-wrap';
+
+            const current = typeof answers[idx] === 'string' ? answers[idx] : '';
+            options.forEach((opt) => {
+                const value = opt.toLowerCase();
+                const btn = document.createElement('button');
+                const sizeClass = isSixOptions ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
+                btn.className = `option-btn ${sizeClass} rounded-lg flex items-center justify-center font-medium select-none focus:outline-none active:scale-95 shadow-sm ${current === value ? 'selected' : ''}`;
+                btn.innerText = opt;
+                btn.onclick = () => {
+                    answers[idx] = value;
+                    if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
+                        WebApp.HapticFeedback.selectionChanged();
+                    }
+                    renderQuestions();
+                    updateMainButton();
+                };
+                optsDiv.appendChild(btn);
+            });
+
+            qDiv.appendChild(optsDiv);
+            container.appendChild(qDiv);
+        }
+
+        function createOpenField(value, placeholder, onInput) {
+            const field = document.createElement('math-field');
+            field.className = 'open-field';
+            field.setAttribute('virtual-keyboard-mode', 'onfocus');
+            field.setAttribute('smart-mode', 'true');
+            field.setAttribute('placeholder', placeholder);
+            field.value = value;
+            field.setAttribute('value', value);
+            field.addEventListener('input', () => {
+                onInput(String(field.value || '').trim());
+            });
+            return field;
+        }
+
+        function renderOpenSingleQuestion(container, idx) {
+            const qDiv = document.createElement('div');
+            qDiv.className = 'p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition';
+
+            const top = document.createElement('div');
+            top.className = 'flex items-center justify-between mb-2';
+
+            const numSpan = document.createElement('span');
+            numSpan.className = 'font-bold text-base';
+            numSpan.innerText = `${idx + 1}.`;
+            top.appendChild(numSpan);
+
+            const tag = document.createElement('span');
+            tag.className = 'text-[11px] px-2 py-1 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200';
+            tag.innerText = 'Ochiq savol';
+            top.appendChild(tag);
+
+            qDiv.appendChild(top);
+
+            const current = typeof answers[idx] === 'string' ? answers[idx] : '';
+            const field = createOpenField(current, 'Javobni kiriting...', (nextValue) => {
+                answers[idx] = nextValue;
+                updateMainButton();
+            });
+
+            qDiv.appendChild(field);
+            container.appendChild(qDiv);
+        }
+
+        function renderOpenPairQuestion(container, idx) {
+            const qDiv = document.createElement('div');
+            qDiv.className = 'p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition';
+
+            const top = document.createElement('div');
+            top.className = 'mb-2';
+
+            const numSpan = document.createElement('span');
+            numSpan.className = 'font-bold text-base';
+            numSpan.innerText = `${idx + 1}.`;
+            top.appendChild(numSpan);
+
+            qDiv.appendChild(top);
+
+            const pair = (answers[idx] && typeof answers[idx] === 'object') ? answers[idx] : { a: '', b: '' };
+            answers[idx] = pair;
+
+            const grid = document.createElement('div');
+            grid.className = 'open2-pair';
+
+            const left = document.createElement('div');
+            left.appendChild(createOpenField(pair.a || '', 'a)', (nextValue) => {
+                pair.a = nextValue;
+                updateMainButton();
+            }));
+
+            const right = document.createElement('div');
+            right.appendChild(createOpenField(pair.b || '', 'b)', (nextValue) => {
+                pair.b = nextValue;
+                updateMainButton();
+            }));
+
+            grid.appendChild(left);
+            grid.appendChild(right);
+            qDiv.appendChild(grid);
+            container.appendChild(qDiv);
+        }
+
+        function renderQuestions() {
+            const container = document.getElementById('questions-container');
+            if (!container) return;
+
+            if (errorMessage && errorMessage !== 'None') {
+                return;
+            }
+
+            container.innerHTML = '';
+
+            if (!hasLoadedTest()) {
+                container.innerHTML = `
+                    <div class="text-sm rounded-lg px-3 py-3 border border-blue-200/50 bg-blue-50/60 text-blue-900 dark:bg-blue-900/15 dark:text-blue-200 dark:border-blue-600/30">
+                        Testni boshlash uchun yuqoridagi kodni kiriting va <b>Ochish</b> tugmasini bosing.
+                    </div>
+                `;
+                updateMainButton();
+                return;
+            }
+
+            for (let i = 0; i < totalQuestions; i++) {
+                const qType = normalizeQuestionType(testStructure[i] ? testStructure[i].type : 'closed');
+
+                if (qType === 'open') {
+                    renderOpenSingleQuestion(container, i);
+                    continue;
+                }
+                if (qType === 'open2') {
+                    renderOpenPairQuestion(container, i);
+                    continue;
+                }
+                if (qType === 'closed6') {
+                    renderClosedQuestion(container, i, ['A', 'B', 'C', 'D', 'E', 'F']);
+                    continue;
+                }
+                renderClosedQuestion(container, i, ['A', 'B', 'C', 'D']);
+            }
+
+            updateMainButton();
+        }
+
+        function countAnsweredQuestions() {
+            let answered = 0;
+            for (let i = 0; i < totalQuestions; i++) {
+                const qType = normalizeQuestionType(testStructure[i] ? testStructure[i].type : 'closed');
+                const value = answers[i];
+
+                if (qType === 'open2') {
+                    const pair = (value && typeof value === 'object') ? value : { a: '', b: '' };
+                    if (String(pair.a || '').trim() && String(pair.b || '').trim()) {
+                        answered += 1;
+                    }
+                    continue;
+                }
+
+                if (String(value || '').trim()) {
+                    answered += 1;
+                }
+            }
+            return answered;
+        }
+
+        function getUnansweredQuestionNumbers() {
+            const missing = [];
+            for (let i = 0; i < totalQuestions; i++) {
+                const qType = normalizeQuestionType(testStructure[i] ? testStructure[i].type : 'closed');
+                const value = answers[i];
+
+                if (qType === 'open2') {
+                    const pair = (value && typeof value === 'object') ? value : { a: '', b: '' };
+                    if (!String(pair.a || '').trim() || !String(pair.b || '').trim()) {
+                        missing.push(i + 1);
+                    }
+                    continue;
+                }
+
+                if (!String(value || '').trim()) {
+                    missing.push(i + 1);
+                }
+            }
+            return missing;
+        }
+
+        function updateMainButton() {
+            if (!hasLoadedTest()) {
+                WebApp.MainButton.hide();
+                return;
+            }
+
+            const answeredCount = countAnsweredQuestions();
+            if (answeredCount > 0) {
+                WebApp.MainButton.show();
+
+                if (answeredCount === totalQuestions) {
+                    WebApp.MainButton.text = 'TESTNI YAKUNLASH 🚀';
+                    WebApp.MainButton.color = WebApp.themeParams.button_color || '#3b82f6';
+                } else {
+                    WebApp.MainButton.text = `DAVOM ETISH (${answeredCount}/${totalQuestions})`;
+                    WebApp.MainButton.color = WebApp.themeParams.button_color || '#8b5cf6';
+                }
+            } else {
+                WebApp.MainButton.hide();
+            }
+        }
+
+        function sendToBot(payloadObject) {
+            const payload = JSON.stringify(payloadObject);
+
+            if (payload.length > 3800) {
+                WebApp.showAlert('Javoblar juda uzun bo\'lib ketdi. Qisqartirib qayta yuboring.');
+                if (WebApp.HapticFeedback && WebApp.HapticFeedback.notificationOccurred) {
+                    WebApp.HapticFeedback.notificationOccurred('warning');
+                }
+                return;
+            }
+
+            try {
+                if (WebApp.MainButton && WebApp.MainButton.showProgress) {
+                    WebApp.MainButton.showProgress();
+                }
+                WebApp.sendData(payload);
+                setTimeout(() => WebApp.close(), 120);
+            } catch (e) {
+                if (WebApp.MainButton && WebApp.MainButton.hideProgress) {
+                    WebApp.MainButton.hideProgress();
+                }
+                WebApp.showAlert('Yuborishda xatolik yuz berdi. Qayta urinib ko\'ring.');
+                if (WebApp.HapticFeedback && WebApp.HapticFeedback.notificationOccurred) {
+                    WebApp.HapticFeedback.notificationOccurred('error');
+                }
+            }
+        }
+
+        async function loadTestByCode() {
+            const input = document.getElementById('test-code-input');
+            const button = document.getElementById('load-test-btn');
+            if (!input || !button) return;
+
+            const code = String(input.value || '').trim();
+            if (!code || !/^\d+$/.test(code)) {
+                WebApp.showAlert('Iltimos, test kodini raqam bilan kiriting.');
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Yuklanmoqda...';
+
+            try {
+                const query = telegramUserId > 0 ? `?user_id=${telegramUserId}` : '';
+                const response = await fetch(`/api/test/${code}${query}`);
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    WebApp.showAlert(payload.detail || 'Test yuklanmadi.');
+                    return;
+                }
+
+                testId = Number(payload.test_id || 0);
+                totalQuestions = Number(payload.total_questions || 0);
+                testStructure = Array.isArray(payload.test_structure) ? payload.test_structure : [];
+                isMixedTest = Boolean(payload.is_mixed);
+                answers = buildAnswersArray();
+
+                updateHeaderCode();
+                toggleLoader();
+                renderMeta();
+                renderQuestions();
+            } catch (e) {
+                WebApp.showAlert('Server bilan bog\'lanishda xatolik. Qayta urinib ko\'ring.');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Ochish';
+            }
+        }
+
+        WebApp.MainButton.onClick(() => {
+            if (!hasLoadedTest()) {
+                WebApp.showAlert('Avval test kodini kiriting.');
+                return;
+            }
+
+            const unanswered = getUnansweredQuestionNumbers();
+            if (unanswered.length > 0) {
+                const missing = unanswered.length > 6
+                    ? `${unanswered.slice(0, 6).join(', ')} va yana ${unanswered.length - 6} ta`
+                    : unanswered.join(', ');
+                WebApp.showAlert(`Belgilanmagan savollar: ${missing}`);
+                if (WebApp.HapticFeedback && WebApp.HapticFeedback.notificationOccurred) {
+                    WebApp.HapticFeedback.notificationOccurred('warning');
+                }
+                return;
+            }
+
+            const mustSendMixed = isMixedTest || testStructure.some((q) => normalizeQuestionType((q || {}).type) !== 'closed');
+            let answersStr = '';
+
+            if (mustSendMixed) {
+                const payloadAnswers = [];
+                for (let i = 0; i < totalQuestions; i++) {
+                    const qType = normalizeQuestionType(testStructure[i] ? testStructure[i].type : 'closed');
+                    if (qType === 'open2') {
+                        const pair = (answers[i] && typeof answers[i] === 'object') ? answers[i] : { a: '', b: '' };
+                        payloadAnswers.push({
+                            type: 'open2',
+                            answer: {
+                                a: String(pair.a || '').trim(),
+                                b: String(pair.b || '').trim(),
+                            }
+                        });
+                        continue;
+                    }
+
+                    const raw = String(answers[i] || '').trim();
+                    payloadAnswers.push({
+                        type: qType,
+                        answer: isClosedType(qType) ? raw.toLowerCase() : raw
+                    });
+                }
+                answersStr = JSON.stringify(payloadAnswers);
+            } else {
+                answersStr = answers.map((ans) => String(ans || '').trim().toLowerCase()).join('');
+            }
+
+            sendToBot({
+                action: 'submit_test',
+                test_id: testId,
+                answers: answersStr,
+            });
+        });
+
+        const loadBtn = document.getElementById('load-test-btn');
+        if (loadBtn) {
+            loadBtn.addEventListener('click', loadTestByCode);
+        }
+
+        const codeInput = document.getElementById('test-code-input');
+        if (codeInput) {
+            codeInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    loadTestByCode();
+                }
+            });
+        }
+
+        answers = buildAnswersArray();
+        updateHeaderCode();
+        toggleLoader();
+        renderMeta();
+        renderQuestions();
+    </script>
+</body>
+</html>

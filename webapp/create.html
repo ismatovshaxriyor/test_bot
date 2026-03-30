@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test yaratish</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/mathlive"></script>
+
+    <style>
+        body {
+            background-color: var(--tg-theme-bg-color, #f3f4f6);
+            color: var(--tg-theme-text-color, #1f2937);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .option-btn {
+            border: 1px solid #d1d5db;
+            color: #374151;
+            transition: all 0.15s ease;
+            cursor: pointer;
+            user-select: none;
+        }
+        [data-theme='dark'] .option-btn { border-color: #4b5563; color: #e5e7eb; }
+        .option-btn.selected {
+            background-color: var(--tg-theme-button-color, #3b82f6);
+            color: var(--tg-theme-button-text-color, #fff);
+            border-color: var(--tg-theme-button-color, #3b82f6);
+            transform: scale(1.05);
+            font-weight: 700;
+        }
+        .glass-panel {
+            background: rgba(255,255,255,0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.3);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        }
+        [data-theme='dark'] .glass-panel {
+            background: rgba(31,41,55,0.88);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .mode-card {
+            border: 2px solid #e5e7eb;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .mode-card.active {
+            border-color: var(--tg-theme-button-color, #3b82f6);
+            background: rgba(59,130,246,0.08);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+        }
+        [data-theme='dark'] .mode-card { border-color: #4b5563; }
+        [data-theme='dark'] .mode-card.active { background: rgba(59,130,246,0.15); border-color: #60a5fa; }
+
+        .counter-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 1px solid #d1d5db;
+            transition: all 0.15s;
+            user-select: none;
+        }
+        .counter-btn:active { transform: scale(0.92); }
+        [data-theme='dark'] .counter-btn { border-color: #4b5563; color: #e5e7eb; }
+
+        .section-card {
+            border: 1px solid rgba(148,163,184,0.35);
+            background: rgba(255,255,255,0.5);
+        }
+        [data-theme='dark'] .section-card {
+            border-color: rgba(100,116,139,0.45);
+            background: rgba(30,41,59,0.4);
+        }
+
+        .question-row {
+            animation: fadeIn 0.12s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .open-field {
+            width: 100%;
+            min-height: 46px;
+            border: 1.5px solid #d1d5db;
+            border-radius: 10px;
+            padding: 8px 10px;
+            background: #081a33;
+            color: #ffffff;
+            transition: border-color 0.15s;
+        }
+        .open-field::placeholder {
+            color: rgba(255, 255, 255, 0.72);
+        }
+        .open-field:focus-within {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 2px rgba(139,92,246,0.15);
+        }
+        [data-theme='dark'] .open-field {
+            border-color: #4b5563;
+            background: #081a33;
+            color: #ffffff;
+        }
+        .open-field::part(virtual-keyboard-toggle),
+        .open-field::part(menu-toggle) {
+            margin: 0;
+            padding-inline: 6px;
+        }
+        .open2-pair {
+            display: grid;
+            grid-template-columns: 1fr;
+            row-gap: 0;
+            column-gap: 8px;
+        }
+        @media (min-width: 640px) {
+            .open2-pair {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                row-gap: 6px;
+            }
+        }
+        @media (max-width: 480px) {
+            .open-field::part(virtual-keyboard-toggle),
+            .open-field::part(menu-toggle) {
+                padding-inline: 3px;
+                transform: translateX(4px);
+            }
+            .open-field::part(virtual-keyboard-toggle) {
+                margin-right: -6px;
+            }
+            .open-field::part(menu-toggle) {
+                margin-left: -6px;
+            }
+        }
+
+        .count-box {
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 10px;
+        }
+        [data-theme='dark'] .count-box {
+            border-color: #475569;
+        }
+
+    </style>
+</head>
+<body class="min-h-screen p-4 pb-28">
+    <div class="glass-panel max-w-md mx-auto p-5 rounded-3xl shadow-lg mt-2 relative overflow-hidden">
+        <div class="absolute -top-12 -right-12 w-28 h-28 bg-green-400 rounded-full opacity-10 blur-2xl"></div>
+        <div class="absolute -bottom-12 -left-12 w-36 h-36 bg-blue-500 rounded-full opacity-10 blur-2xl"></div>
+
+        <h1 class="text-2xl font-extrabold text-center mb-5 tracking-tight">📝 Yangi test yaratish</h1>
+
+        <div class="mb-5">
+            <label class="block font-semibold mb-3 text-sm opacity-80">Baholash turi</label>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="mode-card rounded-xl p-3 text-center active" onclick="selectMode('simple', this)">
+                    <div class="text-2xl mb-1">📊</div>
+                    <div class="font-bold text-sm">Oddiy</div>
+                    <div class="text-xs opacity-60 mt-1">To'g'ri javoblar soni</div>
+                </div>
+                <div class="mode-card rounded-xl p-3 text-center" onclick="selectMode('rasch', this)">
+                    <div class="text-2xl mb-1">📐</div>
+                    <div class="font-bold text-sm">Rash modeli</div>
+                    <div class="text-xs opacity-60 mt-1">Savol qiyinligini hisobga oladi</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="border-t border-gray-200 dark:border-gray-700 my-4"></div>
+
+        <div id="simple-config">
+            <div class="grid grid-cols-1 gap-3 mb-4">
+                <div class="count-box">
+                    <label class="block font-semibold mb-2 text-sm opacity-80">Yopiq savollar soni (A,B,C,D)</label>
+                    <div class="flex items-center justify-between gap-2">
+                        <button class="counter-btn" onclick="changeClosedCount(-5)">-5</button>
+                        <button class="counter-btn" onclick="changeClosedCount(-1)">−</button>
+                        <span id="closed-count-display" class="text-3xl font-black w-16 text-center tabular-nums">10</span>
+                        <button class="counter-btn" onclick="changeClosedCount(1)">+</button>
+                        <button class="counter-btn" onclick="changeClosedCount(5)">+5</button>
+                    </div>
+                </div>
+
+                <div class="count-box">
+                    <label class="block font-semibold mb-2 text-sm opacity-80">Ochiq savollar soni (maxsus klaviatura)</label>
+                    <div class="flex items-center justify-between gap-2">
+                        <button class="counter-btn" onclick="changeOpenCount(-5)">-5</button>
+                        <button class="counter-btn" onclick="changeOpenCount(-1)">−</button>
+                        <span id="open-count-display" class="text-3xl font-black w-16 text-center tabular-nums">0</span>
+                        <button class="counter-btn" onclick="changeOpenCount(1)">+</button>
+                        <button class="counter-btn" onclick="changeOpenCount(5)">+5</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-card rounded-xl p-3 mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">Yopiq savollar</h2>
+                    <span id="closed-caption" class="text-xs opacity-70">0 ta</span>
+                </div>
+                <div id="closed-container" class="space-y-2"></div>
+            </div>
+
+            <div class="section-card rounded-xl p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">Ochiq savollar</h2>
+                    <span id="open-caption" class="text-xs opacity-70">0 ta</span>
+                </div>
+                <div id="open-container" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <div id="rasch-config" class="hidden">
+            <div class="section-card rounded-xl p-3 mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">1-32 savollar (A-D)</h2>
+                    <span class="text-xs opacity-70">32 ta</span>
+                </div>
+                <div id="rasch-closed4-container" class="space-y-2"></div>
+            </div>
+
+            <div class="section-card rounded-xl p-3 mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">33-35 savollar (A-F)</h2>
+                    <span class="text-xs opacity-70">3 ta</span>
+                </div>
+                <div id="rasch-closed6-container" class="space-y-2"></div>
+            </div>
+
+            <div class="section-card rounded-xl p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">36-45 savollar (a/b juft ochiq)</h2>
+                    <span class="text-xs opacity-70">10 ta savol, 20 ta javob</span>
+                </div>
+                <div id="rasch-open2-container" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BOT_USERNAME = {{ (bot_username|default('', true))|tojson }};
+        const BOT_LINK = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}` : "https://t.me/";
+        const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+        const hasTelegramContext = Boolean(
+            tgApp && (tgApp.initData || (tgApp.initDataUnsafe && tgApp.initDataUnsafe.user && tgApp.initDataUnsafe.user.id))
+        );
+
+        if (!hasTelegramContext) {
+            window.location.replace(BOT_LINK);
+            throw new Error("Telegram context required");
+        }
+
+        const WebApp = tgApp;
+        WebApp.expand();
+        WebApp.ready();
+
+        if (WebApp.colorScheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.classList.add('dark');
+        }
+
+        const MAX_TOTAL_QUESTIONS = 300;
+        const RASCH_CLOSED4_COUNT = 32;
+        const RASCH_CLOSED6_COUNT = 3;
+        const RASCH_OPEN2_COUNT = 10;
+        const RASCH_TOTAL_QUESTIONS = 45;
+
+        let scoringMode = 'simple';
+        let closedCount = 10;
+        let openCount = 0;
+        let closedAnswers = [];
+        let openAnswers = [];
+
+        let raschClosed4Answers = new Array(RASCH_CLOSED4_COUNT).fill('');
+        let raschClosed6Answers = new Array(RASCH_CLOSED6_COUNT).fill('');
+        let raschOpen2Answers = Array.from({ length: RASCH_OPEN2_COUNT }, () => ({ a: '', b: '' }));
+
+        function selectionHaptic() {
+            if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
+                WebApp.HapticFeedback.selectionChanged();
+            }
+        }
+
+        function notifyHaptic(type) {
+            if (WebApp.HapticFeedback && WebApp.HapticFeedback.notificationOccurred) {
+                WebApp.HapticFeedback.notificationOccurred(type);
+            }
+        }
+
+        function toggleModePanels() {
+            const simplePanel = document.getElementById('simple-config');
+            const raschPanel = document.getElementById('rasch-config');
+            if (simplePanel) {
+                simplePanel.classList.toggle('hidden', scoringMode !== 'simple');
+            }
+            if (raschPanel) {
+                raschPanel.classList.toggle('hidden', scoringMode !== 'rasch');
+            }
+        }
+
+        function selectMode(mode, el) {
+            scoringMode = mode;
+            document.querySelectorAll('.mode-card').forEach((card) => card.classList.remove('active'));
+            el.classList.add('active');
+            selectionHaptic();
+            toggleModePanels();
+            renderAll();
+        }
+
+        function resizeArray(arr, size) {
+            const next = arr.slice(0, size);
+            while (next.length < size) {
+                next.push('');
+            }
+            return next;
+        }
+
+        function refreshCounts() {
+            document.getElementById('closed-count-display').textContent = closedCount;
+            document.getElementById('open-count-display').textContent = openCount;
+            document.getElementById('closed-caption').textContent = `${closedCount} ta`;
+            document.getElementById('open-caption').textContent = `${openCount} ta`;
+        }
+
+        function syncSimpleState() {
+            closedAnswers = resizeArray(closedAnswers, closedCount);
+            openAnswers = resizeArray(openAnswers, openCount);
+            refreshCounts();
+        }
+
+        function validateTotalLimit(nextClosed, nextOpen) {
+            const total = nextClosed + nextOpen;
+            if (total > MAX_TOTAL_QUESTIONS) {
+                WebApp.showAlert(`Savollar soni ${MAX_TOTAL_QUESTIONS} tadan oshmasligi kerak.`);
+                return false;
+            }
+            return true;
+        }
+
+        function changeClosedCount(delta) {
+            if (scoringMode !== 'simple') {
+                return;
+            }
+            const next = Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, closedCount + delta));
+            if (next === closedCount) {
+                return;
+            }
+            if (!validateTotalLimit(next, openCount)) {
+                return;
+            }
+            closedCount = next;
+            selectionHaptic();
+            renderAll();
+        }
+
+        function changeOpenCount(delta) {
+            if (scoringMode !== 'simple') {
+                return;
+            }
+            const next = Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, openCount + delta));
+            if (next === openCount) {
+                return;
+            }
+            if (!validateTotalLimit(closedCount, next)) {
+                return;
+            }
+            openCount = next;
+            selectionHaptic();
+            renderAll();
+        }
+
+        function renderOptionRow(container, questionNum, options, selectedValue, onSelect) {
+            const isSixOptions = options.length === 6;
+            const row = document.createElement('div');
+            row.className = `question-row flex items-center ${isSixOptions ? 'gap-1.5' : 'gap-2'} p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition`;
+
+            const num = document.createElement('span');
+            num.className = `font-bold ${isSixOptions ? 'w-8' : 'w-10'} text-sm flex-shrink-0`;
+            num.textContent = `${questionNum}.`;
+            row.appendChild(num);
+
+            const optsDiv = document.createElement('div');
+            optsDiv.className = isSixOptions
+                ? 'flex flex-1 gap-1 justify-end items-center flex-nowrap'
+                : 'flex flex-1 gap-1.5 justify-end flex-wrap';
+
+            options.forEach((opt) => {
+                const btn = document.createElement('button');
+                const value = opt.toLowerCase();
+                const sizeClass = isSixOptions ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
+                btn.className = `option-btn ${sizeClass} rounded-lg flex items-center justify-center font-medium focus:outline-none active:scale-95 shadow-sm ${selectedValue === value ? 'selected' : ''}`;
+                btn.textContent = opt;
+                btn.onclick = () => onSelect(value);
+                optsDiv.appendChild(btn);
+            });
+
+            row.appendChild(optsDiv);
+            container.appendChild(row);
+        }
+
+        function createOpenField(value, placeholder, onInput) {
+            const field = document.createElement('math-field');
+            field.className = 'open-field';
+            field.setAttribute('virtual-keyboard-mode', 'onfocus');
+            field.setAttribute('smart-mode', 'true');
+            field.setAttribute('placeholder', placeholder);
+            field.value = value;
+            field.setAttribute('value', value);
+            field.addEventListener('input', () => {
+                onInput(String(field.value || '').trim());
+            });
+            return field;
+        }
+
+        function renderSimpleClosedQuestions() {
+            const container = document.getElementById('closed-container');
+            container.innerHTML = '';
+
+            if (closedCount === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'text-xs opacity-60';
+                empty.textContent = 'Yopiq savol qo\'shilmagan.';
+                container.appendChild(empty);
+                return;
+            }
+
+            for (let i = 0; i < closedCount; i++) {
+                renderOptionRow(
+                    container,
+                    i + 1,
+                    ['A', 'B', 'C', 'D'],
+                    closedAnswers[i],
+                    (value) => {
+                        closedAnswers[i] = value;
+                        selectionHaptic();
+                        renderSimpleClosedQuestions();
+                        updateMainButton();
+                    }
+                );
+            }
+        }
+
+        function renderSimpleOpenQuestions() {
+            const container = document.getElementById('open-container');
+            container.innerHTML = '';
+
+            if (openCount === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'text-xs opacity-60';
+                empty.textContent = 'Ochiq savol qo\'shilmagan.';
+                container.appendChild(empty);
+                return;
+            }
+
+            for (let i = 0; i < openCount; i++) {
+                const row = document.createElement('div');
+                row.className = 'question-row p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition';
+
+                const top = document.createElement('div');
+                top.className = 'flex items-center justify-between mb-2';
+
+                const num = document.createElement('span');
+                num.className = 'font-bold text-sm';
+                num.textContent = `${closedCount + i + 1}.`;
+                top.appendChild(num);
+
+                const badge = document.createElement('span');
+                badge.className = 'text-[11px] px-2 py-1 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200';
+                badge.textContent = 'Maxsus klaviatura';
+                top.appendChild(badge);
+
+                row.appendChild(top);
+
+                const field = createOpenField(
+                    openAnswers[i],
+                    'Javobni yozing (formula bo\'lsa ham bo\'ladi)',
+                    (nextValue) => {
+                        openAnswers[i] = nextValue;
+                        updateMainButton();
+                    }
+                );
+
+                row.appendChild(field);
+                container.appendChild(row);
+            }
+        }
+
+        function renderRaschClosed4Questions() {
+            const container = document.getElementById('rasch-closed4-container');
+            container.innerHTML = '';
+
+            for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
+                renderOptionRow(
+                    container,
+                    i + 1,
+                    ['A', 'B', 'C', 'D'],
+                    raschClosed4Answers[i],
+                    (value) => {
+                        raschClosed4Answers[i] = value;
+                        selectionHaptic();
+                        renderRaschClosed4Questions();
+                        updateMainButton();
+                    }
+                );
+            }
+        }
+
+        function renderRaschClosed6Questions() {
+            const container = document.getElementById('rasch-closed6-container');
+            container.innerHTML = '';
+
+            for (let i = 0; i < RASCH_CLOSED6_COUNT; i++) {
+                renderOptionRow(
+                    container,
+                    33 + i,
+                    ['A', 'B', 'C', 'D', 'E', 'F'],
+                    raschClosed6Answers[i],
+                    (value) => {
+                        raschClosed6Answers[i] = value;
+                        selectionHaptic();
+                        renderRaschClosed6Questions();
+                        updateMainButton();
+                    }
+                );
+            }
+        }
+
+        function renderRaschOpen2Questions() {
+            const container = document.getElementById('rasch-open2-container');
+            container.innerHTML = '';
+
+            for (let i = 0; i < RASCH_OPEN2_COUNT; i++) {
+                const row = document.createElement('div');
+                row.className = 'question-row p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition';
+
+                const num = document.createElement('span');
+                num.className = 'font-bold text-sm block mb-2';
+                num.textContent = `${36 + i}.`;
+                row.appendChild(num);
+
+                const pairWrap = document.createElement('div');
+                pairWrap.className = 'open2-pair';
+
+                const partA = document.createElement('div');
+                partA.appendChild(
+                    createOpenField(
+                        raschOpen2Answers[i].a,
+                        'a)',
+                        (nextValue) => {
+                            raschOpen2Answers[i].a = nextValue;
+                            updateMainButton();
+                        }
+                    )
+                );
+
+                const partB = document.createElement('div');
+                partB.appendChild(
+                    createOpenField(
+                        raschOpen2Answers[i].b,
+                        'b)',
+                        (nextValue) => {
+                            raschOpen2Answers[i].b = nextValue;
+                            updateMainButton();
+                        }
+                    )
+                );
+
+                pairWrap.appendChild(partA);
+                pairWrap.appendChild(partB);
+                row.appendChild(pairWrap);
+                container.appendChild(row);
+            }
+        }
+
+        function countSimpleAnswered() {
+            const answeredClosed = closedAnswers.filter((a) => a !== '').length;
+            const answeredOpen = openAnswers.filter((a) => a !== '').length;
+            return answeredClosed + answeredOpen;
+        }
+
+        function countRaschAnswered() {
+            const answeredClosed4 = raschClosed4Answers.filter((a) => a !== '').length;
+            const answeredClosed6 = raschClosed6Answers.filter((a) => a !== '').length;
+            const answeredOpen2 = raschOpen2Answers.filter((pair) => pair.a && pair.b).length;
+            return answeredClosed4 + answeredClosed6 + answeredOpen2;
+        }
+
+        function updateMainButton() {
+            const isRasch = scoringMode === 'rasch';
+            const total = isRasch ? RASCH_TOTAL_QUESTIONS : (closedCount + openCount);
+
+            if (total === 0) {
+                WebApp.MainButton.hide();
+                return;
+            }
+
+            const answered = isRasch ? countRaschAnswered() : countSimpleAnswered();
+
+            WebApp.MainButton.show();
+
+            if (answered === total) {
+                WebApp.MainButton.text = `TEST YARATISH ✅ (${total} savol)`;
+                WebApp.MainButton.color = '#22c55e';
+            } else {
+                WebApp.MainButton.text = `${answered}/${total} belgilangan`;
+                WebApp.MainButton.color = WebApp.themeParams.button_color || '#8b5cf6';
+            }
+        }
+
+        function renderSimpleAll() {
+            syncSimpleState();
+            renderSimpleClosedQuestions();
+            renderSimpleOpenQuestions();
+            updateMainButton();
+        }
+
+        function renderRaschAll() {
+            renderRaschClosed4Questions();
+            renderRaschClosed6Questions();
+            renderRaschOpen2Questions();
+            updateMainButton();
+        }
+
+        function renderAll() {
+            if (scoringMode === 'rasch') {
+                renderRaschAll();
+                return;
+            }
+            renderSimpleAll();
+        }
+
+        function sendToBot(payloadObject) {
+            const payload = JSON.stringify(payloadObject);
+
+            // Telegram WebApp data limit (safety guard)
+            if (payload.length > 3800) {
+                WebApp.showAlert('Javoblar juda uzun bo\'lib ketdi. Savollar sonini yoki javob matnini qisqartiring.');
+                notifyHaptic('warning');
+                return;
+            }
+
+            try {
+                if (WebApp.MainButton && WebApp.MainButton.showProgress) {
+                    WebApp.MainButton.showProgress();
+                }
+                WebApp.sendData(payload);
+                setTimeout(() => WebApp.close(), 120);
+            } catch (e) {
+                if (WebApp.MainButton && WebApp.MainButton.hideProgress) {
+                    WebApp.MainButton.hideProgress();
+                }
+                WebApp.showAlert('Yuborishda xatolik yuz berdi. Qayta urinib ko\'ring.');
+                notifyHaptic('error');
+            }
+        }
+
+        WebApp.MainButton.onClick(() => {
+            if (scoringMode === 'rasch') {
+                const unanswered = [];
+
+                for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
+                    if (!raschClosed4Answers[i]) {
+                        unanswered.push(i + 1);
+                    }
+                }
+                for (let i = 0; i < RASCH_CLOSED6_COUNT; i++) {
+                    if (!raschClosed6Answers[i]) {
+                        unanswered.push(33 + i);
+                    }
+                }
+                for (let i = 0; i < RASCH_OPEN2_COUNT; i++) {
+                    if (!raschOpen2Answers[i].a || !raschOpen2Answers[i].b) {
+                        unanswered.push(36 + i);
+                    }
+                }
+
+                if (unanswered.length > 0) {
+                    const missing = unanswered.length > 6
+                        ? `${unanswered.slice(0, 6).join(', ')} va yana ${unanswered.length - 6} ta`
+                        : unanswered.join(', ');
+                    WebApp.showAlert(`Belgilanmagan savollar: ${missing}`);
+                    notifyHaptic('warning');
+                    return;
+                }
+
+                const questions = [];
+
+                for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
+                    questions.push({
+                        num: i + 1,
+                        type: 'closed4',
+                        answer: String(raschClosed4Answers[i] || '').toLowerCase()
+                    });
+                }
+
+                for (let i = 0; i < RASCH_CLOSED6_COUNT; i++) {
+                    questions.push({
+                        num: 33 + i,
+                        type: 'closed6',
+                        answer: String(raschClosed6Answers[i] || '').toLowerCase()
+                    });
+                }
+
+                for (let i = 0; i < RASCH_OPEN2_COUNT; i++) {
+                    questions.push({
+                        num: 36 + i,
+                        type: 'open2',
+                        answer: {
+                            a: String(raschOpen2Answers[i].a || '').trim(),
+                            b: String(raschOpen2Answers[i].b || '').trim(),
+                        }
+                    });
+                }
+
+                notifyHaptic('success');
+                sendToBot({
+                    action: 'create_test',
+                    scoring_mode: 'rasch',
+                    answers_format: 'mixed',
+                    questions
+                });
+                return;
+            }
+
+            const total = closedCount + openCount;
+            if (total === 0) {
+                WebApp.showAlert('Kamida 1 ta savol qo\'shing.');
+                notifyHaptic('warning');
+                return;
+            }
+
+            const unanswered = [];
+            for (let i = 0; i < closedCount; i++) {
+                if (!closedAnswers[i]) {
+                    unanswered.push(i + 1);
+                }
+            }
+            for (let i = 0; i < openCount; i++) {
+                if (!openAnswers[i]) {
+                    unanswered.push(closedCount + i + 1);
+                }
+            }
+
+            if (unanswered.length > 0) {
+                const missing = unanswered.length > 6
+                    ? `${unanswered.slice(0, 6).join(', ')} va yana ${unanswered.length - 6} ta`
+                    : unanswered.join(', ');
+                WebApp.showAlert(`Belgilanmagan savollar: ${missing}`);
+                notifyHaptic('warning');
+                return;
+            }
+
+            notifyHaptic('success');
+
+            if (openCount === 0) {
+                sendToBot({
+                    action: 'create_test',
+                    scoring_mode: 'simple',
+                    answers: closedAnswers.join('').toLowerCase()
+                });
+                return;
+            }
+
+            const questions = [];
+
+            for (let i = 0; i < closedCount; i++) {
+                questions.push({
+                    num: i + 1,
+                    type: 'closed',
+                    answer: String(closedAnswers[i] || '').toLowerCase()
+                });
+            }
+
+            for (let i = 0; i < openCount; i++) {
+                questions.push({
+                    num: closedCount + i + 1,
+                    type: 'open',
+                    answer: String(openAnswers[i] || '').trim()
+                });
+            }
+
+            sendToBot({
+                action: 'create_test',
+                scoring_mode: 'simple',
+                answers_format: 'mixed',
+                questions
+            });
+        });
+
+        toggleModePanels();
+        renderAll();
+    </script>
+</body>
+</html>

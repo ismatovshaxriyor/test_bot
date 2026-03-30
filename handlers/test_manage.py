@@ -1,16 +1,112 @@
 """Test boshqarish handlerlari"""
 from datetime import datetime
+from html import escape
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
-from database import get_or_create_user, Test, TestSubmission, User
-from utils import get_question_stats, format_stats, format_stats_simple
+from database import get_or_create_user, Test, TestSubmission
+from utils import (
+    get_question_stats,
+    format_stats,
+    format_stats_simple,
+    calculate_rasch_scores,
+    get_answer_review,
+)
 from export import export_to_excel, export_to_pdf, export_chart
 from config import ADMIN_ID
 from keyboards import (
     main_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
     test_active_stats_keyboard, confirm_end_keyboard, back_to_test_keyboard
 )
+
+
+def _shorten_value(value: str, limit: int = 90) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    if not text:
+        return "—"
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit - 3]}..."
+
+
+def _build_incorrect_answers_text(test: Test, submitted_answers: str, max_chars: int = 2200) -> str:
+    review = get_answer_review(test.correct_answers, submitted_answers)
+    wrong_answers = [item for item in review if not item.get("is_correct")]
+
+    if not wrong_answers:
+        return "🎯 <b>Barcha javoblaringiz to'g'ri!</b>"
+
+    lines = ["❌ <b>Xato javoblar:</b>"]
+    shown = 0
+
+    for item in wrong_answers:
+        submitted = escape(_shorten_value(item.get("submitted_display", "")))
+        correct = escape(_shorten_value(item.get("correct_display", "")))
+        line = (
+            f"{item.get('index')}. "
+            f"Siz: <code>{submitted}</code> | "
+            f"To'g'ri: <code>{correct}</code>"
+        )
+
+        projected = "\n".join(lines + [line])
+        if len(projected) > max_chars:
+            break
+
+        lines.append(line)
+        shown += 1
+
+    remaining = len(wrong_answers) - shown
+    if remaining > 0:
+        lines.append(f"... va yana {remaining} ta savolda xato bor.")
+
+    return "\n".join(lines)
+
+
+async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE, test: Test):
+    submissions = list(TestSubmission.select().where(TestSubmission.test == test))
+    if not submissions:
+        return
+
+    rasch_scores_by_user: dict[int, float] = {}
+    if test.scoring_mode == "rasch":
+        rasch_data = calculate_rasch_scores(test, submissions)
+        for row in rasch_data.get("user_scores", []):
+            user_id = row.get("user_id")
+            if user_id is None:
+                continue
+            try:
+                rasch_scores_by_user[int(user_id)] = float(row.get("rasch_normalized", 0))
+            except (TypeError, ValueError):
+                continue
+
+    for submission in submissions:
+        user_id = submission.user.telegram_id
+
+        if test.scoring_mode == "rasch":
+            score = rasch_scores_by_user.get(user_id, float(submission.percentage))
+            result_line = f"📐 <b>Natijangiz:</b> {round(score, 1)}/100 ball"
+        else:
+            result_line = (
+                f"✅ <b>Natijangiz:</b> "
+                f"{submission.correct_count}/{submission.total_count} ({submission.percentage}%)"
+            )
+
+        wrong_block = _build_incorrect_answers_text(test, submission.answers)
+        text = (
+            "📢 <b>Test yakunlandi!</b>\n\n"
+            f"📝 Test: <code>{test.id}</code>\n"
+            f"{result_line}\n\n"
+            f"{wrong_block}"
+        )
+
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=text,
+                parse_mode="HTML"
+            )
+        except Exception:
+            continue
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -198,6 +294,9 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         text += format_stats_simple(stats, test)
 
     await query.message.edit_text(text, parse_mode="HTML", reply_markup=back_to_test_keyboard(code))
+
+    # Ishtirokchilarga yakuniy natijalarni yuborish
+    await _notify_participants_final_results(context, test)
 
     # Adminga xabar yuborish
     if ADMIN_ID and user.id != ADMIN_ID:
