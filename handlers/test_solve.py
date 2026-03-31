@@ -333,7 +333,6 @@ def get_handlers():
     """Bot ichida yechish + WebApp data handlerlari"""
     conversation_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("solve", solve_command, filters=filters.ChatType.PRIVATE),
             MessageHandler(
                 filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^(✍️ Test yechish|✍️ Oddiy test yechish)$"),
                 solve_command

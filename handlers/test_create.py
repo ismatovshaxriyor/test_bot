@@ -346,7 +346,6 @@ def get_handlers():
     """Bot ichida oddiy test yaratish handlerlari"""
     conversation_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("create", create_command, filters=filters.ChatType.PRIVATE),
             MessageHandler(
                 filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^(📝 Test yaratish|📝 Oddiy test yaratish)$"),
                 create_command
