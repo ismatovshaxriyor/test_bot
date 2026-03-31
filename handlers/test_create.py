@@ -120,6 +120,7 @@ async def scoring_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
     return WAITING_ANSWERS
 
 
+@membership_required
 async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Javoblarni qabul qilish"""
     answers = update.message.text.strip().lower()

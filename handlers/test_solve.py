@@ -42,6 +42,7 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await process_test_code(update, context, code)
 
 
+@membership_required
 async def receive_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test kodini qabul qilish"""
     code = update.message.text.strip().upper()
@@ -121,6 +122,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     return WAITING_USER_ANSWERS
 
 
+@membership_required
 async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Foydalanuvchi javoblarini qabul qilish"""
     test = context.user_data.get('current_test')
@@ -224,6 +226,7 @@ async def cancel_solve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+@membership_required
 async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """WebApp orqali kelgan barcha amallarni qabul qilish (router)"""
     try:

@@ -18,6 +18,7 @@ from keyboards import (
     main_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
     test_active_stats_keyboard, confirm_end_keyboard, back_to_test_keyboard
 )
+from membership import membership_required
 
 
 def _shorten_value(value: str, limit: int = 90) -> str:
@@ -114,6 +115,7 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
             continue
 
 
+@membership_required
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test statistikasini ko'rsatish (command)"""
     if not context.args:
@@ -128,6 +130,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_stats(update.message, context, code, user.id)
 
 
+@membership_required
 async def stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test statistikasini ko'rsatish (callback)"""
     query = update.callback_query
@@ -189,6 +192,7 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
         await message.reply_html(text, reply_markup=keyboard)
 
 
+@membership_required
 async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yakunlash (command)"""
     if not context.args:
@@ -203,6 +207,7 @@ async def end_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_end_confirmation(update.message, context, code, user.id)
 
 
+@membership_required
 async def end_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yakunlash so'rovi (callback)"""
     query = update.callback_query
@@ -259,6 +264,7 @@ async def show_end_confirmation(message, context, code: str, user_id: int, edit:
         await message.reply_html(text, reply_markup=confirm_end_keyboard(code))
 
 
+@membership_required
 async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Yakunlashni tasdiqlash"""
     query = update.callback_query
@@ -318,6 +324,7 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
 
+@membership_required
 async def mytests_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Foydalanuvchining testlari"""
     user = update.effective_user
@@ -344,6 +351,7 @@ async def mytests_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(text, reply_markup=my_tests_keyboard(tests))
 
 
+@membership_required
 async def mytests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mening testlarim callback"""
     query = update.callback_query
@@ -366,6 +374,7 @@ async def mytests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text(text, parse_mode="HTML", reply_markup=my_tests_keyboard(tests))
 
 
+@membership_required
 async def test_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test tafsilotlari"""
     query = update.callback_query
@@ -404,6 +413,7 @@ async def test_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+@membership_required
 async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Foydalanuvchining shaxsiy statistikasi"""
     user = update.effective_user
@@ -441,6 +451,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(text, reply_markup=main_menu_keyboard())
 
 
+@membership_required
 async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Natijalarni faylga eksport qilish"""
     query = update.callback_query

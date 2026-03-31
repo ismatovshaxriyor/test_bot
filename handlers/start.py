@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 from database import get_or_create_user
 from config import ADMIN_ID
 from keyboards import main_menu_keyboard
+from membership import membership_required
 
 
 HELP_TEXT = """
@@ -30,6 +31,7 @@ Yechgan testlaringiz statistikasi
 """
 
 
+@membership_required
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start buyrug'i"""
     user = update.effective_user
@@ -54,11 +56,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@membership_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help buyrug'i"""
     await update.message.reply_html(HELP_TEXT, reply_markup=main_menu_keyboard())
 
 
+@membership_required
 async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Menyu tugmalarini qayta ishlash (📋, 📊)"""
     text = update.message.text
