@@ -1,4 +1,6 @@
 """Test yechish handleri"""
+import logging
+
 from telegram import Update
 from telegram.ext import (
     ContextTypes, CommandHandler,
@@ -10,9 +12,11 @@ from utils import check_answers
 from config import ADMIN_ID
 from keyboards import main_menu_keyboard
 from membership import membership_required
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from config import WEBAPP_URL, WEBAPP_VERSION
 import json
+
+logger = logging.getLogger(__name__)
 
 WAITING_TEST_CODE = 0
 WAITING_USER_ANSWERS = 1
@@ -23,18 +27,13 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yechishni boshlash"""
     # Argumentdan kodni olish
     if not context.args:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 Kengaytirilgan yechish", web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?v={WEBAPP_VERSION}"))]
-        ])
         await update.message.reply_html(
             "✍️ <b>Test yechish</b>\n\n"
             "Hozir siz oddiy test yechish holatidasiz.\n\n"
             "Test egasi sizga yuborgan <b>test raqamini (ID)</b> kiriting:\n\n"
             "💡 Kod faqat raqamlardan iborat\n"
             "(masalan: <code>15</code> yoki <code>42</code>)\n\n"
-            "📌 Ochiq yoki aralash test uchun pastdagi tugmadan foydalaning.\n\n"
-            "❌ Bekor qilish: /cancel",
-            reply_markup=keyboard
+            "❌ Bekor qilish: /cancel yoki Ortga"
         )
         return WAITING_TEST_CODE
 
@@ -46,6 +45,9 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def receive_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test kodini qabul qilish"""
     code = update.message.text.strip().upper()
+    if code == "ORTGA":
+        return await cancel_solve(update, context)
+        
     return await process_test_code(update, context, code)
 
 
@@ -105,17 +107,21 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     context.user_data['current_test'] = test
     context.user_data['db_user'] = db_user
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✍️ Testni yechish 🚀", web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?test_id={test.id}&v={WEBAPP_VERSION}"))]
-    ])
+    # Solve url
+    solve_path = "/solve_rasch" if test.scoring_mode == "rasch" else "/solve"
+
+    keyboard = ReplyKeyboardMarkup([
+        [KeyboardButton("🚀 Interaktiv yechish", web_app=WebAppInfo(url=f"{WEBAPP_URL}{solve_path}?test_id={test.id}&v={WEBAPP_VERSION}"))],
+        [KeyboardButton("Ortga")]
+    ], resize_keyboard=True)
 
     await update.message.reply_html(
         f"📝 <b>Test: {code}</b>\n\n"
         f"❓ Savollar soni: {test.total_questions} ta\n\n"
         f"Javoblaringizni kiriting.\n"
         f"Masalan: <code>{'a' * min(test.total_questions, 10)}</code>\n\n"
-        f"Yoki pastdagi tugma orqali ishlashingiz mumkin\n\n"
-        f"❌ Bekor qilish: /cancel",
+        f"Yoki pastdagi maxsus tugma orqali WebApp da ishlashingiz mumkin\n\n"
+        f"❌ Bekor qilish: /cancel yoki Ortga",
         reply_markup=keyboard
     )
 
@@ -147,7 +153,7 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
     if test.correct_answers and test.correct_answers.startswith("[{"):
         await update.message.reply_html(
             "⚠️ <b>Ushbu testni faqat matn yozib yechib bo'lmaydi!</b>\n"
-            "Testda ochiq savollar bor. Iltimos, yuqoridagi <b>🚀 Testni yechish</b> tugmasidan foydalaning!"
+            "Testda ochiq savollar bor. Iltimos, pastdagi <b>🚀 Interaktiv yechish</b> tugmasidan foydalaning!"
         )
         return WAITING_USER_ANSWERS
 
@@ -156,6 +162,9 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
         return WAITING_USER_ANSWERS
 
     answers = update.message.text.strip().lower()
+
+    if answers == "ortga":
+        return await cancel_solve(update, context)
 
     # Validatsiya
     if not answers.isalpha():
@@ -230,8 +239,13 @@ async def cancel_solve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """WebApp orqali kelgan barcha amallarni qabul qilish (router)"""
     try:
+        if not update.message or not update.message.web_app_data:
+            logger.warning("WEBAPP DATA: message/web_app_data missing")
+            return ConversationHandler.END
+
         data = json.loads(update.message.web_app_data.data)
         action = data.get("action")
+        logger.info("WEBAPP DATA RECEIVED: action=%s user_id=%s", action, update.effective_user.id if update.effective_user else None)
         
         if action == "create_test":
             # Test yaratish — alohida handler ga yo'naltirish
@@ -239,14 +253,14 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             return await webapp_create_handler(update, context)
         
         if action != "submit_test":
-            return
+            return ConversationHandler.END
             
         test_id = data.get("test_id")
         answers = data.get("answers", "")
 
         if not str(test_id).isdigit():
-            await update.message.reply_text("❌ Test kodi noto'g'ri formatda!")
-            return
+            await update.message.reply_text("❌ Test kodi noto'g'ri formatda!", reply_markup=main_menu_keyboard())
+            return ConversationHandler.END
 
         if not isinstance(answers, str):
             answers = str(answers or "")
@@ -262,16 +276,16 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         try:
             test = Test.get_by_id(int(test_id))
         except Test.DoesNotExist:
-            await update.message.reply_text("❌ Kutilmagan xatolik: Test topilmadi.")
-            return
+            await update.message.reply_text("❌ Kutilmagan xatolik: Test topilmadi.", reply_markup=main_menu_keyboard())
+            return ConversationHandler.END
             
         if not test.is_active:
-            await update.message.reply_text("❌ Uzr, bu test allaqachon yakunlangan!")
-            return
+            await update.message.reply_text("❌ Uzr, bu test allaqachon yakunlangan!", reply_markup=main_menu_keyboard())
+            return ConversationHandler.END
 
         if test.creator.telegram_id == telegram_id:
-            await update.message.reply_text("❌ O'zingiz yaratgan testni yecha olmaysiz!")
-            return
+            await update.message.reply_text("❌ O'zingiz yaratgan testni yecha olmaysiz!", reply_markup=main_menu_keyboard())
+            return ConversationHandler.END
             
         existing = TestSubmission.select().where(
             (TestSubmission.test == test) & 
@@ -280,9 +294,10 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         if existing:
             await update.message.reply_text(
-                "⚠️ Siz bu testni allaqachon ishlagansiz!"
+                "⚠️ Siz bu testni allaqachon ishlagansiz!",
+                reply_markup=main_menu_keyboard()
             )
-            return
+            return ConversationHandler.END
             
         # check
         is_mixed = test.correct_answers and test.correct_answers.startswith("[{")
@@ -303,7 +318,8 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Foydalanuvchiga qabul qilinganini yuborish (yakuniy natija test yakunlangach yuboriladi)
         await update.message.reply_html(
             "✅ <b>Javobingiz qabul qilindi.</b>\n\n"
-            "📌 Natija test yakunlangach yuboriladi."
+            "📌 Natija test yakunlangach yuboriladi.",
+            reply_markup=main_menu_keyboard()
         )
 
         # Test egasiga xabar yuborish
@@ -322,11 +338,17 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                 pass
 
     except json.JSONDecodeError:
-        print("WEBAPP DATA: JSONDecodeError")
+        logger.exception("WEBAPP DATA: JSONDecodeError")
+        return ConversationHandler.END
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        await update.message.reply_text(f"Xatolik: {e}")
+        logger.exception("WEBAPP DATA: unexpected error: %s", e)
+        await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_menu_keyboard())
+        return ConversationHandler.END
+
+    # Context tozalash
+    context.user_data.pop('current_test', None)
+    context.user_data.pop('db_user', None)
+    return ConversationHandler.END
 
 
 def get_handlers():
@@ -343,12 +365,20 @@ def get_handlers():
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
                     receive_test_code
+                ),
+                MessageHandler(
+                    filters.StatusUpdate.WEB_APP_DATA,
+                    webapp_receive_data
                 )
             ],
             WAITING_USER_ANSWERS: [
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
                     receive_user_answers
+                ),
+                MessageHandler(
+                    filters.StatusUpdate.WEB_APP_DATA,
+                    webapp_receive_data
                 )
             ],
         },
@@ -358,7 +388,4 @@ def get_handlers():
         allow_reentry=True,
     )
 
-    return [
-        conversation_handler,
-        MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webapp_receive_data),
-    ]
+    return [conversation_handler]

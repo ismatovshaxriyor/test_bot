@@ -1,10 +1,13 @@
 """Membership tekshirish decorator va yordamchi funksiyalar"""
+import logging
 from functools import wraps
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
 from database import Channel
+
+logger = logging.getLogger(__name__)
 
 
 async def check_user_membership(bot, user_id: int) -> tuple[bool, list]:
@@ -15,6 +18,7 @@ async def check_user_membership(bot, user_id: int) -> tuple[bool, list]:
         (all_joined: bool, not_joined_channels: list)
     """
     channels = list(Channel.select().where(Channel.is_active == True))
+    logger.info("MEMBERSHIP CHECK: user_id=%s active_channels=%s", user_id, len(channels))
 
     if not channels:
         return True, []
@@ -32,10 +36,18 @@ async def check_user_membership(bot, user_id: int) -> tuple[bool, list]:
             # Ruxsat etilgan holatlar tashqarisida bo'lsa - a'zo emas
             if member.status not in allowed_statuses:
                 not_joined.append(channel)
+                logger.info(
+                    "MEMBERSHIP CHECK: user_id=%s channel_id=%s status=%s -> not joined",
+                    user_id, channel.channel_id, member.status
+                )
         except TelegramError:
             # Tekshiruv xatoligi bo'lsa xavfsiz yo'l:
             # foydalanuvchini tekshirilmagan deb hisoblaymiz.
             not_joined.append(channel)
+            logger.exception(
+                "MEMBERSHIP CHECK ERROR: user_id=%s channel_id=%s",
+                user_id, channel.channel_id
+            )
 
     return len(not_joined) == 0, not_joined
 
@@ -72,9 +84,13 @@ def membership_required(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user = update.effective_user
+        if not user:
+            logger.warning("MEMBERSHIP CHECK: effective_user missing")
+            return None
 
         # A'zolikni tekshirish
         all_joined, not_joined = await check_user_membership(context.bot, user.id)
+        logger.info("MEMBERSHIP RESULT: user_id=%s all_joined=%s not_joined=%s", user.id, all_joined, len(not_joined))
 
         if not all_joined:
             # Kanallarga a'zo emas

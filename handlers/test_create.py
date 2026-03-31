@@ -1,5 +1,7 @@
 """Test yaratish handleri"""
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+import logging
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ContextTypes, CommandHandler,
     MessageHandler, ConversationHandler, CallbackQueryHandler, filters
@@ -11,6 +13,8 @@ from keyboards import test_created_keyboard, main_menu_keyboard
 from membership import membership_required
 import json
 import re
+
+logger = logging.getLogger(__name__)
 
 # Conversation states
 WAITING_ANSWERS = 0
@@ -79,21 +83,22 @@ def _normalize_rasch_questions(questions: list) -> list:
 
 @membership_required
 async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Oddiy testni bot ichida tezkor yaratish"""
-    keyboard = InlineKeyboardMarkup([
+    """Oddiy testni bot ichida tezkor yaratish yoki WebApp orqali tanlash"""
+    keyboard = ReplyKeyboardMarkup([
         [
-            InlineKeyboardButton("🚀 Kengaytirilgan yaratish", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))
-        ]
-    ])
+            KeyboardButton("🚀 Oddiy test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}")),
+            KeyboardButton("📐 Rash test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))
+        ],
+        [KeyboardButton("Ortga")]
+    ], resize_keyboard=True)
 
     await update.message.reply_html(
         "📝 <b>Test yaratish</b>\n\n"
-        "Hozir siz oddiy test yaratish holatidasiz.\n\n"
-        "To'g'ri javoblarni bitta qatorda yuboring.\n"
+        "Matn yordamida tezkor Oddiy test yaratish uchun to'g'ri javoblarni bitta qatorda yuboring.\n"
         "Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n\n"
         "Masalan: <code>aabbcabacbadccabbdac</code>\n\n"
-        "📌 Rash yoki ochiq savolli test uchun pastdagi tugmadan foydalaning.\n\n"
-        "❌ Bekor qilish: /cancel",
+        "📌 Aralash yoki Rash modeli testlarini yaratish uchun quyidagi WebApp tugmalardan foydalaning.\n\n"
+        "❌ Botni asosiy menyusiga qaytish: /cancel yoki Ortga",
         reply_markup=keyboard
     )
     return WAITING_ANSWERS
@@ -124,6 +129,9 @@ async def scoring_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
 async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Javoblarni qabul qilish"""
     answers = update.message.text.strip().lower()
+
+    if answers == "ortga":
+        return await cancel_command(update, context)
 
     # Validatsiya
     if not answers:
@@ -195,6 +203,8 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Bu kodni boshqalarga yuboring!",
         reply_markup=test_created_keyboard(test_id, bot_username, len(answers))
     )
+    
+    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
 
     return ConversationHandler.END
 
@@ -202,32 +212,36 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """WebApp orqali yaratilgan testni qabul qilish"""
     try:
+        if not update.message or not update.message.web_app_data:
+            logger.warning("WEBAPP CREATE: web_app_data missing")
+            return ConversationHandler.END
+
         data = json.loads(update.message.web_app_data.data)
         if data.get("action") != "create_test":
-            return
+            return ConversationHandler.END
 
         scoring_mode = data.get("scoring_mode", "simple")
         answers_format = data.get("answers_format", "simple")
 
         if scoring_mode not in {"simple", "rasch"}:
             await update.message.reply_text("❌ Baholash turi noto'g'ri!")
-            return
-        
+            return ConversationHandler.END
+
         if scoring_mode == "rasch":
             if answers_format != "mixed":
                 await update.message.reply_text("❌ Rash test uchun qat'iy format yuborilishi kerak.")
-                return
+                return ConversationHandler.END
 
             questions = data.get("questions", [])
             if not isinstance(questions, list) or not questions:
                 await update.message.reply_text("❌ Rash test savollari bo'sh!")
-                return
+                return ConversationHandler.END
 
             try:
                 normalized_questions = _normalize_rasch_questions(questions)
             except ValueError as e:
                 await update.message.reply_text(f"❌ {e}")
-                return
+                return ConversationHandler.END
 
             answers_str = json.dumps(normalized_questions, ensure_ascii=False)
             questions_count = len(normalized_questions)
@@ -236,13 +250,13 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             questions = data.get("questions", [])
             if not isinstance(questions, list) or not questions:
                 await update.message.reply_text("❌ Javoblar bo'sh!")
-                return
+                return ConversationHandler.END
 
             normalized_questions = []
             for i, q in enumerate(questions):
                 if not isinstance(q, dict):
                     await update.message.reply_text("❌ Savollar formati noto'g'ri!")
-                    return
+                    return ConversationHandler.END
 
                 q_type = str(q.get("type", "closed")).strip().lower()
                 if q_type not in {"closed", "open"}:
@@ -251,7 +265,7 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 answer = str(q.get("answer", "")).strip()
                 if not answer:
                     await update.message.reply_text(f"❌ {i + 1}-savol javobi bo'sh bo'lmasligi kerak.")
-                    return
+                    return ConversationHandler.END
 
                 if q_type == "closed":
                     answer = answer.lower()
@@ -259,7 +273,7 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
                         await update.message.reply_text(
                             f"❌ {i + 1}-savol uchun yopiq javob faqat A, B, C yoki D bo'lishi kerak."
                         )
-                        return
+                        return ConversationHandler.END
 
                 normalized_questions.append({
                     "num": i + 1,
@@ -274,7 +288,7 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             answers_str = data.get("answers", "").strip().lower()
             if not answers_str or not answers_str.isalpha():
                 await update.message.reply_text("❌ Javoblar noto'g'ri formatda!")
-                return
+                return ConversationHandler.END
             questions_count = len(answers_str)
 
         user = update.effective_user
@@ -324,13 +338,20 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             f"Bu kodni boshqalarga yuboring!",
             reply_markup=test_created_keyboard(test_id, bot_username, questions_count)
         )
+        
+        await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+        
+        logger.info("WEBAPP CREATE: created test_id=%s user_id=%s mode=%s", test_id, user.id, scoring_mode)
+        return ConversationHandler.END
 
     except json.JSONDecodeError:
+        logger.exception("WEBAPP CREATE: JSONDecodeError")
         await update.message.reply_text("❌ Yuborilgan ma'lumot noto'g'ri!")
+        return ConversationHandler.END
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("WEBAPP CREATE: unexpected error: %s", e)
         await update.message.reply_text(f"❌ Xatolik: {e}")
+        return ConversationHandler.END
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -356,6 +377,10 @@ def get_handlers():
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
                     receive_answers
+                ),
+                MessageHandler(
+                    filters.StatusUpdate.WEB_APP_DATA,
+                    webapp_create_handler
                 )
             ],
         },

@@ -140,7 +140,30 @@
 
         <div id="meta-container" class="mb-4"></div>
 
-        <div id="questions-container" class="space-y-4"></div>
+        <div id="questions-wrapper" class="hidden">
+            <div class="mb-4 p-3 rounded-xl border border-slate-200 bg-white/50 dark:border-slate-700/60 dark:bg-slate-800/40">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">1-32 savollar (A-D)</h2>
+                </div>
+                <div id="rasch-closed4-container" class="space-y-2"></div>
+            </div>
+
+            <div class="mb-4 p-3 rounded-xl border border-slate-200 bg-white/50 dark:border-slate-700/60 dark:bg-slate-800/40">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">33-35 savollar (A-F)</h2>
+                </div>
+                <div id="rasch-closed6-container" class="space-y-2"></div>
+            </div>
+
+            <div class="p-3 rounded-xl border border-slate-200 bg-white/50 dark:border-slate-700/60 dark:bg-slate-800/40">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">36-45 savollar (a/b juft ochiq)</h2>
+                </div>
+                <div id="rasch-open2-container" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <div id="empty-state-container"></div>
     </div>
 
     {% endif %}
@@ -429,41 +452,44 @@
         }
 
         function renderQuestions() {
-            const container = document.getElementById('questions-container');
-            if (!container) return;
+            const wrapper = document.getElementById('questions-wrapper');
+            const emptyState = document.getElementById('empty-state-container');
+            if (!wrapper || !emptyState) return;
 
             if (errorMessage && errorMessage !== 'None') {
                 return;
             }
 
-            container.innerHTML = '';
-
             if (!hasLoadedTest()) {
-                container.innerHTML = `
+                wrapper.classList.add('hidden');
+                emptyState.innerHTML = `
                     <div class="text-sm rounded-lg px-3 py-3 border border-blue-200/50 bg-blue-50/60 text-blue-900 dark:bg-blue-900/15 dark:text-blue-200 dark:border-blue-600/30">
-                        Testni boshlash uchun yuqoridagi kodni kiriting va <b>Ochish</b> tugmasini bosing.
+                        Rash testini boshlash uchun yuqoridagi kodni kiriting va <b>Ochish</b> tugmasini bosing.
                     </div>
                 `;
                 updateMainButton();
                 return;
             }
 
-            for (let i = 0; i < totalQuestions; i++) {
-                const qType = normalizeQuestionType(testStructure[i] ? testStructure[i].type : 'closed');
+            wrapper.classList.remove('hidden');
+            emptyState.innerHTML = '';
 
-                if (qType === 'open') {
-                    renderOpenSingleQuestion(container, i);
-                    continue;
+            const container4 = document.getElementById('rasch-closed4-container');
+            const container6 = document.getElementById('rasch-closed6-container');
+            const containerOpen = document.getElementById('rasch-open2-container');
+
+            container4.innerHTML = '';
+            container6.innerHTML = '';
+            containerOpen.innerHTML = '';
+
+            for (let i = 0; i < totalQuestions; i++) {
+                if (i < 32) {
+                    renderClosedQuestion(container4, i, ['A', 'B', 'C', 'D']);
+                } else if (i < 35) {
+                    renderClosedQuestion(container6, i, ['A', 'B', 'C', 'D', 'E', 'F']);
+                } else {
+                    renderOpenPairQuestion(containerOpen, i);
                 }
-                if (qType === 'open2') {
-                    renderOpenPairQuestion(container, i);
-                    continue;
-                }
-                if (qType === 'closed6') {
-                    renderClosedQuestion(container, i, ['A', 'B', 'C', 'D', 'E', 'F']);
-                    continue;
-                }
-                renderClosedQuestion(container, i, ['A', 'B', 'C', 'D']);
             }
 
             updateMainButton();

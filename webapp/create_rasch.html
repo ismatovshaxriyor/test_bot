@@ -160,48 +160,34 @@
 
 
 
-        <div id="simple-config">
-            <div class="grid grid-cols-1 gap-3 mb-4">
-                <div class="count-box">
-                    <label class="block font-semibold mb-2 text-sm opacity-80">Yopiq savollar soni (A,B,C,D)</label>
-                    <div class="flex items-center justify-between gap-2">
-                        <button class="counter-btn" onclick="changeClosedCount(-5)">-5</button>
-                        <button class="counter-btn" onclick="changeClosedCount(-1)">−</button>
-                        <span id="closed-count-display" class="text-3xl font-black w-16 text-center tabular-nums">10</span>
-                        <button class="counter-btn" onclick="changeClosedCount(1)">+</button>
-                        <button class="counter-btn" onclick="changeClosedCount(5)">+5</button>
-                    </div>
-                </div>
 
-                <div class="count-box">
-                    <label class="block font-semibold mb-2 text-sm opacity-80">Ochiq savollar soni (maxsus klaviatura)</label>
-                    <div class="flex items-center justify-between gap-2">
-                        <button class="counter-btn" onclick="changeOpenCount(-5)">-5</button>
-                        <button class="counter-btn" onclick="changeOpenCount(-1)">−</button>
-                        <span id="open-count-display" class="text-3xl font-black w-16 text-center tabular-nums">0</span>
-                        <button class="counter-btn" onclick="changeOpenCount(1)">+</button>
-                        <button class="counter-btn" onclick="changeOpenCount(5)">+5</button>
-                    </div>
+
+        <div id="rasch-config">
+            <div class="section-card rounded-xl p-3 mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-bold text-sm">1-32 savollar (A-D)</h2>
+                    <span class="text-xs opacity-70">32 ta</span>
                 </div>
+                <div id="rasch-closed4-container" class="space-y-2"></div>
             </div>
 
             <div class="section-card rounded-xl p-3 mb-4">
                 <div class="flex items-center justify-between mb-2">
-                    <h2 class="font-bold text-sm">Yopiq savollar</h2>
-                    <span id="closed-caption" class="text-xs opacity-70">0 ta</span>
+                    <h2 class="font-bold text-sm">33-35 savollar (A-F)</h2>
+                    <span class="text-xs opacity-70">3 ta</span>
                 </div>
-                <div id="closed-container" class="space-y-2"></div>
+                <div id="rasch-closed6-container" class="space-y-2"></div>
             </div>
 
             <div class="section-card rounded-xl p-3">
                 <div class="flex items-center justify-between mb-2">
-                    <h2 class="font-bold text-sm">Ochiq savollar</h2>
-                    <span id="open-caption" class="text-xs opacity-70">0 ta</span>
+                    <h2 class="font-bold text-sm">36-45 savollar (a/b juft ochiq)</h2>
+                    <span class="text-xs opacity-70">10 ta savol, 20 ta javob</span>
                 </div>
-                <div id="open-container" class="space-y-3"></div>
+                <div id="rasch-open2-container" class="space-y-3"></div>
             </div>
         </div>
-
+    </div>
 
     <script>
         const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
@@ -243,11 +229,16 @@
         }
 
         const MAX_TOTAL_QUESTIONS = 300;
+        const RASCH_CLOSED4_COUNT = 32;
+        const RASCH_CLOSED6_COUNT = 3;
+        const RASCH_OPEN2_COUNT = 10;
+        const RASCH_TOTAL_QUESTIONS = 45;
 
-        let closedCount = 10;
-        let openCount = 0;
-        let closedAnswers = [];
-        let openAnswers = [];
+
+
+        let raschClosed4Answers = new Array(RASCH_CLOSED4_COUNT).fill('');
+        let raschClosed6Answers = new Array(RASCH_CLOSED6_COUNT).fill('');
+        let raschOpen2Answers = Array.from({ length: RASCH_OPEN2_COUNT }, () => ({ a: '', b: '' }));
 
         function selectionHaptic() {
             if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
@@ -262,61 +253,6 @@
         }
 
 
-        function resizeArray(arr, size) {
-            const next = arr.slice(0, size);
-            while (next.length < size) {
-                next.push('');
-            }
-            return next;
-        }
-
-        function refreshCounts() {
-            document.getElementById('closed-count-display').textContent = closedCount;
-            document.getElementById('open-count-display').textContent = openCount;
-            document.getElementById('closed-caption').textContent = `${closedCount} ta`;
-            document.getElementById('open-caption').textContent = `${openCount} ta`;
-        }
-
-        function syncSimpleState() {
-            closedAnswers = resizeArray(closedAnswers, closedCount);
-            openAnswers = resizeArray(openAnswers, openCount);
-            refreshCounts();
-        }
-
-        function validateTotalLimit(nextClosed, nextOpen) {
-            const total = nextClosed + nextOpen;
-            if (total > MAX_TOTAL_QUESTIONS) {
-                WebApp.showAlert(`Savollar soni ${MAX_TOTAL_QUESTIONS} tadan oshmasligi kerak.`);
-                return false;
-            }
-            return true;
-        }
-
-        function changeClosedCount(delta) {
-            const next = Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, closedCount + delta));
-            if (next === closedCount) {
-                return;
-            }
-            if (!validateTotalLimit(next, openCount)) {
-                return;
-            }
-            closedCount = next;
-            selectionHaptic();
-            renderAll();
-        }
-
-        function changeOpenCount(delta) {
-            const next = Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, openCount + delta));
-            if (next === openCount) {
-                return;
-            }
-            if (!validateTotalLimit(closedCount, next)) {
-                return;
-            }
-            openCount = next;
-            selectionHaptic();
-            renderAll();
-        }
 
         function renderOptionRow(container, questionNum, options, selectedValue, onSelect) {
             const isSixOptions = options.length === 6;
@@ -361,93 +297,108 @@
             return field;
         }
 
-        function renderSimpleClosedQuestions() {
-            const container = document.getElementById('closed-container');
+
+
+        function renderRaschClosed4Questions() {
+            const container = document.getElementById('rasch-closed4-container');
             container.innerHTML = '';
 
-            if (closedCount === 0) {
-                const empty = document.createElement('p');
-                empty.className = 'text-xs opacity-60';
-                empty.textContent = 'Yopiq savol qo\'shilmagan.';
-                container.appendChild(empty);
-                return;
-            }
-
-            for (let i = 0; i < closedCount; i++) {
+            for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
                 renderOptionRow(
                     container,
                     i + 1,
                     ['A', 'B', 'C', 'D'],
-                    closedAnswers[i],
+                    raschClosed4Answers[i],
                     (value) => {
-                        closedAnswers[i] = value;
+                        raschClosed4Answers[i] = value;
                         selectionHaptic();
-                        renderSimpleClosedQuestions();
+                        renderRaschClosed4Questions();
                         updateMainButton();
                     }
                 );
             }
         }
 
-        function renderSimpleOpenQuestions() {
-            const container = document.getElementById('open-container');
+        function renderRaschClosed6Questions() {
+            const container = document.getElementById('rasch-closed6-container');
             container.innerHTML = '';
 
-            if (openCount === 0) {
-                const empty = document.createElement('p');
-                empty.className = 'text-xs opacity-60';
-                empty.textContent = 'Ochiq savol qo\'shilmagan.';
-                container.appendChild(empty);
-                return;
+            for (let i = 0; i < RASCH_CLOSED6_COUNT; i++) {
+                renderOptionRow(
+                    container,
+                    33 + i,
+                    ['A', 'B', 'C', 'D', 'E', 'F'],
+                    raschClosed6Answers[i],
+                    (value) => {
+                        raschClosed6Answers[i] = value;
+                        selectionHaptic();
+                        renderRaschClosed6Questions();
+                        updateMainButton();
+                    }
+                );
             }
+        }
 
-            for (let i = 0; i < openCount; i++) {
+        function renderRaschOpen2Questions() {
+            const container = document.getElementById('rasch-open2-container');
+            container.innerHTML = '';
+
+            for (let i = 0; i < RASCH_OPEN2_COUNT; i++) {
                 const row = document.createElement('div');
                 row.className = 'question-row p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition';
 
-                const top = document.createElement('div');
-                top.className = 'flex items-center justify-between mb-2';
-
                 const num = document.createElement('span');
-                num.className = 'font-bold text-sm';
-                num.textContent = `${closedCount + i + 1}.`;
-                top.appendChild(num);
+                num.className = 'font-bold text-sm block mb-2';
+                num.textContent = `${36 + i}.`;
+                row.appendChild(num);
 
-                const badge = document.createElement('span');
-                badge.className = 'text-[11px] px-2 py-1 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200';
-                badge.textContent = 'Maxsus klaviatura';
-                top.appendChild(badge);
+                const pairWrap = document.createElement('div');
+                pairWrap.className = 'open2-pair';
 
-                row.appendChild(top);
-
-                const field = createOpenField(
-                    openAnswers[i],
-                    'Javobni yozing (formula bo\'lsa ham bo\'ladi)',
-                    (nextValue) => {
-                        openAnswers[i] = nextValue;
-                        updateMainButton();
-                    }
+                const partA = document.createElement('div');
+                partA.appendChild(
+                    createOpenField(
+                        raschOpen2Answers[i].a,
+                        'a)',
+                        (nextValue) => {
+                            raschOpen2Answers[i].a = nextValue;
+                            updateMainButton();
+                        }
+                    )
                 );
 
-                row.appendChild(field);
+                const partB = document.createElement('div');
+                partB.appendChild(
+                    createOpenField(
+                        raschOpen2Answers[i].b,
+                        'b)',
+                        (nextValue) => {
+                            raschOpen2Answers[i].b = nextValue;
+                            updateMainButton();
+                        }
+                    )
+                );
+
+                pairWrap.appendChild(partA);
+                pairWrap.appendChild(partB);
+                row.appendChild(pairWrap);
                 container.appendChild(row);
             }
         }
-        function countSimpleAnswered() {
-            const answeredClosed = closedAnswers.filter((a) => a !== '').length;
-            const answeredOpen = openAnswers.filter((a) => a !== '').length;
-            return answeredClosed + answeredOpen;
+
+
+
+        function countRaschAnswered() {
+            const answeredClosed4 = raschClosed4Answers.filter((a) => a !== '').length;
+            const answeredClosed6 = raschClosed6Answers.filter((a) => a !== '').length;
+            const answeredOpen2 = raschOpen2Answers.filter((pair) => pair.a && pair.b).length;
+            return answeredClosed4 + answeredClosed6 + answeredOpen2;
         }
 
         function updateMainButton() {
-            const total = closedCount + openCount;
+            const total = RASCH_TOTAL_QUESTIONS;
 
-            if (total === 0) {
-                WebApp.MainButton.hide();
-                return;
-            }
-
-            const answered = countSimpleAnswered();
+            const answered = countRaschAnswered();
 
             WebApp.MainButton.show();
 
@@ -461,9 +412,9 @@
         }
 
         function renderAll() {
-            syncSimpleState();
-            renderSimpleClosedQuestions();
-            renderSimpleOpenQuestions();
+            renderRaschClosed4Questions();
+            renderRaschClosed6Questions();
+            renderRaschOpen2Questions();
             updateMainButton();
         }
 
@@ -501,23 +452,21 @@
         }
 
         function handleMainButtonClick() {
-
-            const total = closedCount + openCount;
-            if (total === 0) {
-                WebApp.showAlert('Kamida 1 ta savol qo\'shing.');
-                notifyHaptic('warning');
-                return;
-            }
-
             const unanswered = [];
-            for (let i = 0; i < closedCount; i++) {
-                if (!closedAnswers[i]) {
+
+            for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
+                if (!raschClosed4Answers[i]) {
                     unanswered.push(i + 1);
                 }
             }
-            for (let i = 0; i < openCount; i++) {
-                if (!openAnswers[i]) {
-                    unanswered.push(closedCount + i + 1);
+            for (let i = 0; i < RASCH_CLOSED6_COUNT; i++) {
+                if (!raschClosed6Answers[i]) {
+                    unanswered.push(33 + i);
+                }
+            }
+            for (let i = 0; i < RASCH_OPEN2_COUNT; i++) {
+                if (!raschOpen2Answers[i].a || !raschOpen2Answers[i].b) {
+                    unanswered.push(36 + i);
                 }
             }
 
@@ -530,38 +479,39 @@
                 return;
             }
 
-            notifyHaptic('success');
-
-            if (openCount === 0) {
-                sendToBot({
-                    action: 'create_test',
-                    scoring_mode: 'simple',
-                    answers: closedAnswers.join('').toLowerCase()
-                });
-                return;
-            }
-
             const questions = [];
 
-            for (let i = 0; i < closedCount; i++) {
+            for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
                 questions.push({
                     num: i + 1,
-                    type: 'closed',
-                    answer: String(closedAnswers[i] || '').toLowerCase()
+                    type: 'closed4',
+                    answer: String(raschClosed4Answers[i] || '').toLowerCase()
                 });
             }
 
-            for (let i = 0; i < openCount; i++) {
+            for (let i = 0; i < RASCH_CLOSED6_COUNT; i++) {
                 questions.push({
-                    num: closedCount + i + 1,
-                    type: 'open',
-                    answer: String(openAnswers[i] || '').trim()
+                    num: 33 + i,
+                    type: 'closed6',
+                    answer: String(raschClosed6Answers[i] || '').toLowerCase()
                 });
             }
 
+            for (let i = 0; i < RASCH_OPEN2_COUNT; i++) {
+                questions.push({
+                    num: 36 + i,
+                    type: 'open2',
+                    answer: {
+                        a: String(raschOpen2Answers[i].a || '').trim(),
+                        b: String(raschOpen2Answers[i].b || '').trim(),
+                    }
+                });
+            }
+
+            notifyHaptic('success');
             sendToBot({
                 action: 'create_test',
-                scoring_mode: 'simple',
+                scoring_mode: 'rasch',
                 answers_format: 'mixed',
                 questions
             });

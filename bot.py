@@ -14,6 +14,7 @@ from database import init_db
 from handlers import start, test_create, test_solve, test_manage, admin, inline
 from membership import check_membership_callback
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
+from keyboards import main_menu_keyboard
 
 # Logging sozlash
 logging.basicConfig(
@@ -31,6 +32,11 @@ BOT_COMMANDS = [
 ]
 
 
+async def global_ortga_handler(update, context):
+    """Global levelda (Conversationdan tashqari) kelgan 'Ortga' ni ushlab, menyuni ko'rsatadi"""
+    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+
+
 async def main():
     """Botni ishga tushirish"""
     # Token tekshirish
@@ -45,6 +51,9 @@ async def main():
 
     # Application yaratish
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # (Global WebApp handler moved to the bottom so that conversation handlers can intercept it first)
+
 
     # Handlerlarni qo'shish
     # Start va help
@@ -73,6 +82,14 @@ async def main():
 
     # Membership tekshirish callback
     application.add_handler(CallbackQueryHandler(check_membership_callback, pattern=r"^check_membership$"))
+
+    # Global WebApp catch-all
+    # Ushbu handler eng oxirida qo'shiladi, shunday qilib agar foydalanuvchi qandaydir Conversation
+    # ichida WebApp ishlatgan bo'lsa, Conversation o'zi uni tutib oladi, agar yo'q bo'lsa, shunda global ushlaydi.
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, test_solve.webapp_receive_data))
+
+    # Global Ortga catch-all (agar user Conversation ichida bo'lmasa ishlashi uchun oxirida qo'shildi!)
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r'^(Ortga|❌ Bekor qilish)$'), global_ortga_handler))
 
     # Botni ishga tushirish
     logger.info("🚀 Bot ishga tushmoqda...")

@@ -34,7 +34,6 @@ def test_created_keyboard(test_code: str, bot_username: str = "", total_question
 
     keyboard = [
         [InlineKeyboardButton("📤 Ulashish", url=share_url)],
-        [InlineKeyboardButton("✍️ Testni yechish 🚀", web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?test_id={test_code}&v={WEBAPP_VERSION}"))],
         [InlineKeyboardButton("📊 Statistika", callback_data=f"stats_{test_code}")],
         [InlineKeyboardButton("🔚 Yakunlash", callback_data=f"end_{test_code}")]
     ]

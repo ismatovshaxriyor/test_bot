@@ -108,11 +108,12 @@ def _solve_context_from_test(test: Test) -> dict:
     }
 
 
-async def _render_solve(request: Request, test_id: Optional[int]) -> HTMLResponse:
+async def _render_solve(request: Request, test_id: Optional[int], is_rasch: bool = False) -> HTMLResponse:
+    template_name = "solve_rasch.html" if is_rasch else "index.html"
     if test_id is None:
         return templates.TemplateResponse(
             request=request,
-            name="index.html",
+            name=template_name,
             context=_empty_solve_context(),
         )
 
@@ -121,20 +122,20 @@ async def _render_solve(request: Request, test_id: Optional[int]) -> HTMLRespons
     except Test.DoesNotExist:
         return templates.TemplateResponse(
             request=request,
-            name="index.html",
+            name=template_name,
             context=_empty_solve_context(test_id=test_id, error="Test topilmadi!"),
         )
 
     if not test.is_active:
         return templates.TemplateResponse(
             request=request,
-            name="index.html",
+            name=template_name,
             context=_empty_solve_context(test_id=test_id, error="Bu test yakunlangan."),
         )
 
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
+        name=template_name,
         context=_solve_context_from_test(test),
     )
 
@@ -147,16 +148,32 @@ async def serve_webapp(request: Request, test_id: Optional[int] = None):
 
 @app.get("/solve", response_class=HTMLResponse)
 async def serve_solve_webapp(request: Request, test_id: Optional[int] = None):
-    """Test yechish WebApp sahifasi."""
-    return await _render_solve(request, test_id)
+    """Test yechish WebApp sahifasi (Oddiy)."""
+    return await _render_solve(request, test_id, is_rasch=False)
+
+
+@app.get("/solve_rasch", response_class=HTMLResponse)
+async def serve_solve_rasch_webapp(request: Request, test_id: Optional[int] = None):
+    """Rash testi uchun yechish WebApp sahifasi."""
+    return await _render_solve(request, test_id, is_rasch=True)
 
 
 @app.get("/create", response_class=HTMLResponse)
 async def serve_create_webapp(request: Request):
-    """Test yaratish WebApp sahifasi."""
+    """Oddiy Test yaratish WebApp sahifasi."""
     return templates.TemplateResponse(
         request=request,
         name="create.html",
+        context={"bot_username": RESOLVED_BOT_USERNAME},
+    )
+
+
+@app.get("/create_rasch", response_class=HTMLResponse)
+async def serve_create_rasch_webapp(request: Request):
+    """Rash Test yaratish WebApp sahifasi."""
+    return templates.TemplateResponse(
+        request=request,
+        name="create_rasch.html",
         context={"bot_username": RESOLVED_BOT_USERNAME},
     )
 

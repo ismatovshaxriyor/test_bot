@@ -48,6 +48,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db_user.is_admin = True
         db_user.save()
 
+    # Agar botga test kodi bilan kirishsa (Deep link: t.me/bot?start=123)
+    if context.args and context.args[0].isdigit():
+        test_code = context.args[0]
+        await update.message.reply_html(
+            f"🎯 <b>{test_code} - testni yechish uchun keldingiz!</b>\n\n"
+            f"Testni boshlash uchun quyidagi menyudan <b>✍️ Test yechish</b> tugmasini bosing va <code>{test_code}</code> kodini yuboring.",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+
     await update.message.reply_html(
         f"👋 Salom, <b>{user.first_name}</b>!\n\n"
         f"🎯 Bu bot test javoblarini tekshirish uchun yaratilgan.\n\n"
