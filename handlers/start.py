@@ -12,15 +12,15 @@ HELP_TEXT = """
 
 <b>📝 Test yaratish:</b>
 1. "📝 Test yaratish" tugmasini bosing
-2. Ochilgan oynada yopiq/ochiq savollarni kiriting
-3. Yakunlang — bot sizga test kodini yuboradi
-4. Bu kodni boshqalarga yuboring
+2. Variantlarni kiriting (masalan: <code>aabbccdd...</code>)
+3. Bot test kodini yuboradi
+4. Pastdagi "🚀 Kengaytirilgan yaratish" tugmasi bilan WebAppga o'ting
 
 <b>✍️ Test yechish:</b>
 1. "✍️ Test yechish" tugmasini bosing
-2. Ochilgan oynada test kodini kiriting
-3. Javoblaringizni belgilang/kiriting
-4. Natijangizni ko'ring
+2. Test kodini kiriting
+3. Oddiy test bo'lsa, javob qatorini yuboring
+4. Pastdagi "🚀 Kengaytirilgan yechish" tugmasi bilan WebAppga o'ting
 
 <b>📋 Mening testlarim:</b>
 O'zingiz yaratgan testlarni ko'rish va boshqarish

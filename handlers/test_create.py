@@ -10,10 +10,10 @@ from config import ADMIN_ID, WEBAPP_URL, WEBAPP_VERSION
 from keyboards import test_created_keyboard, main_menu_keyboard
 from membership import membership_required
 import json
+import re
 
 # Conversation states
-WAITING_SCORING_MODE = 0
-WAITING_ANSWERS = 1
+WAITING_ANSWERS = 0
 
 
 def _normalize_rasch_questions(questions: list) -> list:
@@ -79,27 +79,24 @@ def _normalize_rasch_questions(questions: list) -> list:
 
 @membership_required
 async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Test yaratishni boshlash — baholash turini tanlash"""
+    """Oddiy testni bot ichida tezkor yaratish"""
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 Oddiy", callback_data="scoring_simple"),
-            InlineKeyboardButton("📐 Rash", callback_data="scoring_rasch"),
-        ],
-        [
-            InlineKeyboardButton("🚀 Testni yaratish", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))
+            InlineKeyboardButton("🚀 Kengaytirilgan yaratish", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))
         ]
     ])
 
     await update.message.reply_html(
-        "📝 <b>Yangi test yaratish</b>\n\n"
-        "Baholash turini tanlang:\n\n"
-        "📊 <b>Oddiy</b> — to'g'ri javoblar soni bo'yicha\n"
-        "📐 <b>Rash</b> — savol qiyinligini hisobga oladi\n\n"
-        "Yoki pastdagi tugma orqali yarating 👇\n\n"
+        "📝 <b>Test yaratish</b>\n\n"
+        "Hozir siz oddiy test yaratish holatidasiz.\n\n"
+        "To'g'ri javoblarni bitta qatorda yuboring.\n"
+        "Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n\n"
+        "Masalan: <code>aabbcabacbadccabbdac</code>\n\n"
+        "📌 Rash yoki ochiq savolli test uchun pastdagi tugmadan foydalaning.\n\n"
         "❌ Bekor qilish: /cancel",
         reply_markup=keyboard
     )
-    return WAITING_SCORING_MODE
+    return WAITING_ANSWERS
 
 
 async def scoring_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -132,10 +129,11 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Javoblar bo'sh bo'lmasligi kerak!")
         return WAITING_ANSWERS
 
-    # Faqat harflarni tekshirish
-    if not answers.isalpha():
+    # Tezkor oddiy test: faqat A-D variantlar
+    if not re.fullmatch(r"[a-d]+", answers):
         await update.message.reply_html(
-            "❌ Javoblar faqat harflardan iborat bo'lishi kerak!\n"
+            "❌ Noto'g'ri format!\n"
+            "Faqat <b>A, B, C, D</b> harflaridan foydalaning.\n"
             "Masalan: <code>abbacabbac</code>"
         )
         return WAITING_ANSWERS
@@ -147,8 +145,8 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         full_name=user.full_name or user.first_name
     )
 
-    # Baholash turini olish
-    scoring_mode = context.user_data.get('scoring_mode', 'simple')
+    # Bot ichidagi tezkor rejim faqat oddiy test uchun
+    scoring_mode = "simple"
 
     # Testni saqlash
     try:
@@ -166,7 +164,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     test_id = str(test.id)
 
     # Adminga xabar yuborish (faqat boshqa odam yaratganda)
-    mode_text = "📊 Oddiy" if scoring_mode == "simple" else "📐 Rash"
+    mode_text = "📊 Oddiy"
     if ADMIN_ID and user.id != ADMIN_ID:
         try:
             await context.bot.send_message(
@@ -197,8 +195,6 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=test_created_keyboard(test_id, bot_username, len(answers))
     )
 
-    # user_data ni tozalash
-    context.user_data.pop('scoring_mode', None)
     return ConversationHandler.END
 
 
@@ -338,7 +334,6 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bekor qilish"""
-    context.user_data.pop('scoring_mode', None)
     await update.message.reply_text(
         "❌ Test yaratish bekor qilindi.",
         reply_markup=main_menu_keyboard()
@@ -347,5 +342,26 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def get_handlers():
-    """Yaratish oqimi to'liq WebApp ga ko'chirilgan."""
-    return []
+    """Bot ichida oddiy test yaratish handlerlari"""
+    conversation_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("create", create_command, filters=filters.ChatType.PRIVATE),
+            MessageHandler(
+                filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^(📝 Test yaratish|📝 Oddiy test yaratish)$"),
+                create_command
+            ),
+        ],
+        states={
+            WAITING_ANSWERS: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_answers
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_command, filters=filters.ChatType.PRIVATE),
+        ],
+        allow_reentry=True,
+    )
+    return [conversation_handler]

@@ -21,18 +21,21 @@ async def check_user_membership(bot, user_id: int) -> tuple[bool, list]:
 
     not_joined = []
 
+    allowed_statuses = {"member", "administrator", "creator"}
+
     for channel in channels:
         try:
             member = await bot.get_chat_member(
                 chat_id=channel.channel_id,
                 user_id=user_id
             )
-            # left, kicked yoki restricted bo'lsa - a'zo emas
-            if member.status in ['left', 'kicked']:
+            # Ruxsat etilgan holatlar tashqarisida bo'lsa - a'zo emas
+            if member.status not in allowed_statuses:
                 not_joined.append(channel)
         except TelegramError:
-            # Xatolik bo'lsa (bot admin emas va h.k.) - o'tkazib yuborish
-            pass
+            # Tekshiruv xatoligi bo'lsa xavfsiz yo'l:
+            # foydalanuvchini tekshirilmagan deb hisoblaymiz.
+            not_joined.append(channel)
 
     return len(not_joined) == 0, not_joined
 

@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 # Bot buyruqlari
 BOT_COMMANDS = [
     BotCommand("start", "Botni boshlash"),
+    BotCommand("create", "Oddiy testni tez yaratish"),
+    BotCommand("solve", "Testni bot ichida yechish"),
+    BotCommand("cancel", "Jarayonni bekor qilish"),
     BotCommand("help", "Yordam"),
 ]
 
@@ -103,4 +106,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -156,7 +156,16 @@ async def receive_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Kanalda bot admin ekanligini tekshirish
         try:
             chat = await context.bot.get_chat(chat_id)
-            bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
+            if chat.type != "channel":
+                await update.message.reply_html(
+                    "❌ <b>Bu chat kanal emas!</b>\n\n"
+                    "Iltimos, faqat kanal ID yoki @username yuboring.\n\n"
+                    "❌ Bekor qilish: /cancel"
+                )
+                return WAITING_CHANNEL_ID
+
+            bot_info = await context.bot.get_me()
+            bot_member = await context.bot.get_chat_member(chat.id, bot_info.id)
 
             if bot_member.status not in ['administrator', 'creator']:
                 await update.message.reply_html(
@@ -575,5 +584,4 @@ def get_handlers():
         CallbackQueryHandler(users_callback, pattern=r"^admin_users$"),
         CallbackQueryHandler(tests_callback, pattern=r"^admin_tests$"),
     ]
-
 

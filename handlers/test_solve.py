@@ -23,12 +23,18 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yechishni boshlash"""
     # Argumentdan kodni olish
     if not context.args:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Kengaytirilgan yechish", web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?v={WEBAPP_VERSION}"))]
+        ])
         await update.message.reply_html(
             "✍️ <b>Test yechish</b>\n\n"
+            "Hozir siz oddiy test yechish holatidasiz.\n\n"
             "Test egasi sizga yuborgan <b>test raqamini (ID)</b> kiriting:\n\n"
             "💡 Kod faqat raqamlardan iborat\n"
             "(masalan: <code>15</code> yoki <code>42</code>)\n\n"
-            "❌ Bekor qilish: /cancel"
+            "📌 Ochiq yoki aralash test uchun pastdagi tugmadan foydalaning.\n\n"
+            "❌ Bekor qilish: /cancel",
+            reply_markup=keyboard
         )
         return WAITING_TEST_CODE
 
@@ -321,5 +327,36 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 def get_handlers():
-    """Yechish oqimi to'liq WebApp ga ko'chirilgan."""
-    return [MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webapp_receive_data)]
+    """Bot ichida yechish + WebApp data handlerlari"""
+    conversation_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("solve", solve_command, filters=filters.ChatType.PRIVATE),
+            MessageHandler(
+                filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^(✍️ Test yechish|✍️ Oddiy test yechish)$"),
+                solve_command
+            ),
+        ],
+        states={
+            WAITING_TEST_CODE: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_test_code
+                )
+            ],
+            WAITING_USER_ANSWERS: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_user_answers
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_solve, filters=filters.ChatType.PRIVATE),
+        ],
+        allow_reentry=True,
+    )
+
+    return [
+        conversation_handler,
+        MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webapp_receive_data),
+    ]

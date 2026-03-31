@@ -6,14 +6,8 @@ def main_menu_keyboard():
     """Asosiy menyu"""
     keyboard = [
         [
-            KeyboardButton(
-                "📝 Test yaratish",
-                web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}")
-            ),
-            KeyboardButton(
-                "✍️ Test yechish",
-                web_app=WebAppInfo(url=f"{WEBAPP_URL}/solve?v={WEBAPP_VERSION}")
-            )
+            KeyboardButton("📝 Test yaratish"),
+            KeyboardButton("✍️ Test yechish")
         ],
         [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
     ]
