@@ -1,10 +1,95 @@
 """Yordamchi funksiyalar"""
 import random
+import re
 import string
 import math
 import json
-from typing import Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict
 from database import Test, TestSubmission
+
+
+def parse_simple_answers(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Foydalanuvchi kiritgan javoblarni ikkala formatda parse qiladi:
+
+    Format 1 (klassik): "abcabcba"
+        → faqat A-D harflari
+
+    Format 2 (raqamli): "1a2b3c" yoki "1-a 2-b 3c" yoki "1.a 2.b"
+        → har bir savol raqam + harf juftligi
+
+    Returns:
+        (answers_str, None)  — muvaffaqiyatli, answers_str = "abcd..."
+        (None, error_text)   — xato
+    """
+    raw = text.strip().lower()
+
+    # ── Format 2: raqamli ko'rinish ──────────────────────────────────────────
+    # Tokenni aniqlash: raqam (ixtiyoriy ajratuvchi) harf
+    # Qabul qilinadigan ajratuvchilar: -, ., boʻsh joy yoki hech narsa
+    numbered_pattern = re.compile(
+        r'(\d+)\s*[-.]?\s*([a-d])',
+        re.IGNORECASE
+    )
+    tokens = numbered_pattern.findall(raw)
+
+    # Agar raqamli tokenlar topilsa va matnning asosiy qismi shu tokenlardan iborat bo'lsa
+    # (qolgan harflar/raqamlar bo'lmasligi kerak, bo'lsa klassik formatga o'tamiz)
+    if tokens:
+        # Hamma token satrni qoplashini tekshiramiz
+        # (ya'ni "1a2b3c" → to'liq parse, "abc1d" → klassik formatga o'tamiz)
+        rebuilt = re.sub(r'[\s\-\.]+', '', raw)          # bo'shliq/ajratuvchilarni olib tashlab
+        covered = re.sub(r'\d+[a-d]', '', rebuilt)       # har bir token ni olib tashlash
+        leftover = re.sub(r'[^a-d\d]', '', covered)      # faqat harf va raqam qolganlarini sanash
+
+        # Agar qolgan belgi bo'lmasa → bu sof raqamli format
+        if not leftover:
+            # Raqam bo'yicha saralash va takroran kiritilgan raqamlarni aniqlash
+            numbered = {}
+            for num_str, letter in tokens:
+                num = int(num_str)
+                if num in numbered:
+                    return None, (
+                        f"❌ {num}-savol bir necha marta kiritilgan!\n"
+                        f"Har bir savol faqat bir marta bo'lishi kerak."
+                    )
+                numbered[num] = letter.lower()
+
+            if not numbered:
+                return None, "❌ Javoblar topilmadi!"
+
+            # Raqamlarning 1 dan boshlanib ketma-ket kelishini tekshirish
+            min_n, max_n = min(numbered), max(numbered)
+            if min_n != 1:
+                return None, (
+                    f"❌ Raqamlar 1 dan boshlanishi kerak!\n"
+                    f"Eng kichik raqam: {min_n}"
+                )
+
+            missing = [i for i in range(1, max_n + 1) if i not in numbered]
+            if missing:
+                missing_str = ", ".join(str(m) for m in missing[:5])
+                return None, (
+                    f"❌ Ba'zi savol raqamlari tushib qolgan: {missing_str}\n"
+                    f"Barcha savollar ketma-ket bo'lishi kerak."
+                )
+
+            answers_str = "".join(numbered[i] for i in range(1, max_n + 1))
+            return answers_str, None
+
+    # ── Format 1: klassik "abcabc" ───────────────────────────────────────────
+    if not raw:
+        return None, "❌ Javoblar bo'sh bo'lmasligi kerak!"
+
+    if not re.fullmatch(r'[a-d]+', raw):
+        return None, (
+            "❌ Noto'g'ri format!\n\n"
+            "Ikki xil usulda yozishingiz mumkin:\n"
+            "• Klassik: <code>abcabcd</code>\n"
+            "• Raqamli: <code>1a2b3c4d</code> yoki <code>1-a 2-b 3-c</code>"
+        )
+
+    return raw, None
 
 
 def _is_mixed_answers(raw: str) -> bool:

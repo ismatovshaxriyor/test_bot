@@ -7,8 +7,8 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from database import get_or_create_user, Test, TestSubmission
-from utils import check_answers
+from database import get_or_create_user, Test, TestSubmission, AdminTestWatch
+from utils import check_answers, parse_simple_answers
 from config import ADMIN_ID
 from keyboards import main_menu_keyboard
 from membership import membership_required
@@ -118,8 +118,9 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     await update.message.reply_html(
         f"📝 <b>Test: {code}</b>\n\n"
         f"❓ Savollar soni: {test.total_questions} ta\n\n"
-        f"Javoblaringizni kiriting.\n"
-        f"Masalan: <code>{'a' * min(test.total_questions, 10)}</code>\n\n"
+        f"Javoblaringizni ikki usuldan birida kiriting:\n"
+        f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
+        f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
         f"Yoki pastdagi maxsus tugma orqali WebApp da ishlashingiz mumkin\n\n"
         f"❌ Bekor qilish: /cancel yoki Ortga",
         reply_markup=keyboard
@@ -161,17 +162,15 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ Faqat matn yuboring!")
         return WAITING_USER_ANSWERS
 
-    answers = update.message.text.strip().lower()
+    answers = update.message.text.strip()
 
-    if answers == "ortga":
+    if answers.lower() == "ortga":
         return await cancel_solve(update, context)
 
-    # Validatsiya
-    if not answers.isalpha():
-        await update.message.reply_html(
-            "❌ Javoblar faqat harflardan iborat bo'lishi kerak!\n"
-            "Masalan: <code>abbacabbac</code>"
-        )
+    # Ikkala formatni qabul qiluvchi parse
+    answers, error = parse_simple_answers(answers)
+    if error:
+        await update.message.reply_html(error)
         return WAITING_USER_ANSWERS
 
     # Javoblar sonini tekshirish
@@ -209,6 +208,24 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
             await context.bot.send_message(
                 chat_id=creator.telegram_id,
                 text=f"📢 <b>Yangi natija!</b>\n\n"
+                     f"📝 Test: <code>{test.id}</code>\n"
+                     f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                     f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    # Kuzatayotgan adminlarga bildirishnoma
+    skip_ids = {db_user.telegram_id, test.creator.telegram_id}
+    for watch in AdminTestWatch.select().where(AdminTestWatch.test == test):
+        try:
+            watcher_tg_id = watch.admin.telegram_id
+            if watcher_tg_id in skip_ids:
+                continue
+            await context.bot.send_message(
+                chat_id=watcher_tg_id,
+                text=f"🔔 <b>Kuzatuv: Yangi natija!</b>\n\n"
                      f"📝 Test: <code>{test.id}</code>\n"
                      f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
                      f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
@@ -332,6 +349,24 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                      f"📝 Test: <code>{test.id}</code>\n"
                      f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
                      f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+        # Kuzatayotgan adminlarga bildirishnoma
+        skip_ids = {db_user.telegram_id, test.creator.telegram_id}
+        for watch in AdminTestWatch.select().where(AdminTestWatch.test == test):
+            try:
+                watcher_tg_id = watch.admin.telegram_id
+                if watcher_tg_id in skip_ids:
+                    continue
+                await context.bot.send_message(
+                    chat_id=watcher_tg_id,
+                    text=f"🔔 <b>Kuzatuv: Yangi natija!</b>\n\n"
+                         f"📝 Test: <code>{test.id}</code>\n"
+                         f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                         f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
                     parse_mode="HTML"
                 )
             except Exception:

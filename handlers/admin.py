@@ -6,7 +6,7 @@ from telegram.ext import (
 )
 from telegram.error import TelegramError
 
-from database import User, Test, TestSubmission, Channel
+from database import User, Test, TestSubmission, Channel, AdminTestWatch
 from config import ADMIN_ID
 
 # Conversation states
@@ -47,7 +47,10 @@ def admin_keyboard():
         [InlineKeyboardButton("📢 Kanallar", callback_data="admin_channels")],
         [InlineKeyboardButton("👑 Adminlar", callback_data="admin_admins")],
         [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="admin_users")],
-        [InlineKeyboardButton("📝 Testlar", callback_data="admin_tests")],
+        [
+            InlineKeyboardButton("📝 Testlar", callback_data="admin_tests"),
+            InlineKeyboardButton("🟢 Faol testlar", callback_data="admin_active_tests"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -318,7 +321,7 @@ async def users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @admin_only
 async def tests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Testlar"""
+    """Testlar — so'nggi 15 ta"""
     query = update.callback_query
     await query.answer()
 
@@ -333,8 +336,101 @@ async def tests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = Test.select().count()
     text += f"\n<b>Jami:</b> {total} ta"
 
-    keyboard = [[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")]]
+    keyboard = [
+        [InlineKeyboardButton("🟢 Faol testlar (kuzatuv)", callback_data="admin_active_tests")],
+        [InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")],
+    ]
     await query.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+@admin_only
+async def admin_active_tests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Faol testlar ro'yxati — kuzatuv tugmalari bilan"""
+    query = update.callback_query
+    await query.answer()
+    admin_user_id = update.effective_user.id
+
+    try:
+        admin_db = User.get(User.telegram_id == admin_user_id)
+    except User.DoesNotExist:
+        await query.answer("❌ Admin topilmadi!", show_alert=True)
+        return
+
+    active_tests = list(Test.select().where(Test.is_active == True).order_by(Test.created_at.desc()))
+
+    if not active_tests:
+        await query.message.edit_text(
+            "🟢 <b>Faol testlar</b>\n\nHozircha faol test yo'q.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_tests")]])
+        )
+        return
+
+    # Admin kuzatayotgan test IDlari
+    watching_ids = set(
+        w.test_id for w in AdminTestWatch.select().where(AdminTestWatch.admin == admin_db)
+    )
+
+    text = "🟢 <b>Faol testlar</b>\n"
+    text += "🔔 = kuzatilmoqda | 🔕 = kuzatilmayapti\n\n"
+
+    keyboard = []
+    for test in active_tests:
+        watching = test.id in watching_ids
+        bell = "🔔" if watching else "🔕"
+        creator_name = test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
+        text += f"{bell} <code>{test.id}</code> — {test.total_questions} savol | {creator_name}\n"
+
+        toggle_label = "🔕 Bekor qilish" if watching else "🔔 Kuzatish"
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{toggle_label} (#{test.id})",
+                callback_data=f"watch_test_{test.id}"
+            )
+        ])
+
+    keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="admin_tests")])
+
+    await query.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+@admin_only
+async def admin_watch_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test kuzatuvini yoqish/o'chirish"""
+    query = update.callback_query
+    admin_user_id = update.effective_user.id
+
+    test_id = int(query.data.replace("watch_test_", ""))
+
+    try:
+        admin_db = User.get(User.telegram_id == admin_user_id)
+    except User.DoesNotExist:
+        await query.answer("❌ Admin topilmadi!", show_alert=True)
+        return
+
+    try:
+        test = Test.get_by_id(test_id)
+    except Test.DoesNotExist:
+        await query.answer("❌ Test topilmadi!", show_alert=True)
+        return
+
+    existing = AdminTestWatch.get_or_none(
+        (AdminTestWatch.admin == admin_db) & (AdminTestWatch.test == test)
+    )
+
+    if existing:
+        existing.delete_instance()
+        await query.answer(f"🔕 #{test_id} kuzatuv bekor qilindi", show_alert=False)
+    else:
+        AdminTestWatch.create(admin=admin_db, test=test)
+        await query.answer(f"🔔 #{test_id} kuzatuvga qo'shildi!", show_alert=False)
+
+    # Ro'yxatni yangilash
+    await admin_active_tests_callback(update, context)
 
 
 @admin_only
@@ -583,5 +679,7 @@ def get_handlers():
         CallbackQueryHandler(delete_admin_callback, pattern=r"^del_admin_"),
         CallbackQueryHandler(users_callback, pattern=r"^admin_users$"),
         CallbackQueryHandler(tests_callback, pattern=r"^admin_tests$"),
+        CallbackQueryHandler(admin_active_tests_callback, pattern=r"^admin_active_tests$"),
+        CallbackQueryHandler(admin_watch_toggle_callback, pattern=r"^watch_test_"),
     ]
 

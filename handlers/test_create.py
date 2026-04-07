@@ -11,6 +11,7 @@ from database import get_or_create_user, Test
 from config import ADMIN_ID, WEBAPP_URL, WEBAPP_VERSION
 from keyboards import test_created_keyboard, main_menu_keyboard
 from membership import membership_required
+from utils import parse_simple_answers
 import json
 import re
 
@@ -94,11 +95,15 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_html(
         "📝 <b>Test yaratish</b>\n\n"
-        "Matn yordamida tezkor Oddiy test yaratish uchun to'g'ri javoblarni bitta qatorda yuboring.\n"
-        "Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n\n"
-        "Masalan: <code>aabbcabacbadccabbdac</code>\n\n"
-        "📌 Aralash yoki Rash modeli testlarini yaratish uchun quyidagi WebApp tugmalardan foydalaning.\n\n"
-        "❌ Botni asosiy menyusiga qaytish: /cancel yoki Ortga",
+        "To'g'ri javoblarni quyidagi ikki usuldan birida yuboring:\n\n"
+        "1️⃣ <b>Klassik usul</b> — harflarni ketma-ket yozing:\n"
+        "   <code>aabbcabacbad</code>\n\n"
+        "2️⃣ <b>Raqamli usul</b> — raqam + harf bilan yozing:\n"
+        "   <code>1a2a3b4c5a6b</code>\n"
+        "   <code>1-a 2-a 3-b 4-c</code>\n\n"
+        "📌 Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n"
+        "📌 Aralash yoki Rash modeli uchun quyidagi WebApp tugmalardan foydalaning.\n\n"
+        "❌ Bekor qilish: /cancel yoki Ortga",
         reply_markup=keyboard
     )
     return WAITING_ANSWERS
@@ -128,23 +133,15 @@ async def scoring_mode_callback(update: Update, context: ContextTypes.DEFAULT_TY
 @membership_required
 async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Javoblarni qabul qilish"""
-    answers = update.message.text.strip().lower()
+    raw = update.message.text.strip()
 
-    if answers == "ortga":
+    if raw.lower() == "ortga":
         return await cancel_command(update, context)
 
-    # Validatsiya
-    if not answers:
-        await update.message.reply_text("❌ Javoblar bo'sh bo'lmasligi kerak!")
-        return WAITING_ANSWERS
-
-    # Tezkor oddiy test: faqat A-D variantlar
-    if not re.fullmatch(r"[a-d]+", answers):
-        await update.message.reply_html(
-            "❌ Noto'g'ri format!\n"
-            "Faqat <b>A, B, C, D</b> harflaridan foydalaning.\n"
-            "Masalan: <code>abbacabbac</code>"
-        )
+    # Ikkala formatni qabul qiluvchi parse
+    answers, error = parse_simple_answers(raw)
+    if error:
+        await update.message.reply_html(error)
         return WAITING_ANSWERS
 
     user = update.effective_user

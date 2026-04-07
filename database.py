@@ -3,7 +3,7 @@ from datetime import datetime
 from peewee import (
     SqliteDatabase, Model,
     IntegerField, BigIntegerField, CharField, TextField,
-    BooleanField, DateTimeField, ForeignKeyField
+    BooleanField, DateTimeField, ForeignKeyField, CompositeKey
 )
 from config import DATABASE_PATH
 
@@ -86,10 +86,21 @@ class Channel(BaseModel):
         table_name = "channels"
 
 
+class AdminTestWatch(BaseModel):
+    """Admin kuzatayotgan testlar"""
+    admin = ForeignKeyField(User, backref="watching")
+    test = ForeignKeyField(Test, backref="watchers")
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        table_name = "admin_test_watches"
+        primary_key = CompositeKey("admin", "test")
+
+
 def init_db():
     """Databaseni ishga tushirish"""
     db.connect()
-    db.create_tables([User, Test, TestSubmission, Channel])
+    db.create_tables([User, Test, TestSubmission, Channel, AdminTestWatch])
     print("✅ Database tayyor!")
 
 
