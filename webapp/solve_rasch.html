@@ -387,9 +387,23 @@
             field.setAttribute('placeholder', placeholder);
             field.value = value;
             field.setAttribute('value', value);
-            field.addEventListener('input', () => {
-                onInput(String(field.value || '').trim());
-            });
+            
+            const handleInput = () => {
+                let val = '';
+                if (typeof field.getValue === 'function') {
+                    val = field.getValue();
+                } else if (field.value !== undefined) {
+                    val = field.value;
+                }
+                onInput(String(val || '').trim());
+            };
+            
+            field.addEventListener('input', handleInput);
+            field.addEventListener('change', handleInput);
+            field.addEventListener('focusout', handleInput);
+            field.addEventListener('blur', handleInput);
+            field.addEventListener('keyup', handleInput);
+            
             return field;
         }
 

@@ -293,10 +293,20 @@
             field.setAttribute('value', value);
             
             const handleInput = () => {
-                onInput(String(field.value || '').trim());
+                let val = '';
+                if (typeof field.getValue === 'function') {
+                    val = field.getValue();
+                } else if (field.value !== undefined) {
+                    val = field.value;
+                }
+                onInput(String(val || '').trim());
             };
+            
             field.addEventListener('input', handleInput);
             field.addEventListener('change', handleInput);
+            field.addEventListener('focusout', handleInput);
+            field.addEventListener('blur', handleInput);
+            field.addEventListener('keyup', handleInput);
             
             return field;
         }
