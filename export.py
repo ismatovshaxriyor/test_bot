@@ -228,35 +228,43 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     else:
         header_cells = "<th>#</th><th>Ism</th><th>To'g'ri</th><th>Jami</th>"
 
-    # Shrift yo'li (loyiha ichidagi NotoSans)
+    # Custom @font-face ishlatmaymiz — Pango bilan raqam spacing muammosi bo'ladi.
+    # Sistem fontlariga (DejaVu, Noto) ishonib, WeasyPrint o'zi tanlaydi.
+    # FAQAT matematik Unicode belgilar uchun NotoSansMath yuklaymiz (unicode-range bilan)
     _base_dir = os.path.dirname(os.path.abspath(__file__))
-    font_regular = os.path.join(_base_dir, 'fonts', 'NotoSans-Regular.ttf')
-    font_bold    = os.path.join(_base_dir, 'fonts', 'NotoSans-Bold.ttf')
+    math_font_path = os.path.join(_base_dir, 'fonts', 'NotoSansMath-Regular.ttf')
 
-    if os.path.exists(font_regular):
-        font_css = f"""
+    if os.path.exists(math_font_path):
+        math_font_css = f"""
         @font-face {{
-            font-family: 'NotoSans';
-            src: url('file://{font_regular}') format('truetype');
-            font-weight: normal;
-        }}
-        @font-face {{
-            font-family: 'NotoSans';
-            src: url('file://{font_bold}') format('truetype');
-            font-weight: bold;
+            font-family: 'NotoMath';
+            src: url('file://{math_font_path}') format('truetype');
+            /* Faqat matematik/fancy-text Unicode belgilar uchun */
+            unicode-range:
+                U+1D400-U+1D7FF,  /* Mathematical Alphanumeric Symbols */
+                U+2100-U+214F,    /* Letterlike Symbols */
+                U+2200-U+22FF,    /* Mathematical Operators */
+                U+27C0-U+27FF,    /* Misc Mathematical Symbols */
+                U+1D100-U+1D1FF;  /* Musical Symbols (ortiqcha ehtiyot) */
         }}
         """
-        font_family = "NotoSans, 'Segoe UI Emoji', Arial, sans-serif"
+        font_family = (
+            "'NotoMath', 'Noto Sans', 'DejaVu Sans', 'Noto Color Emoji', "
+            "'Segoe UI Emoji', 'Apple Color Emoji', Arial, sans-serif"
+        )
     else:
-        font_css = ""
-        font_family = "'Segoe UI Emoji', Arial, sans-serif"
+        math_font_css = ""
+        font_family = (
+            "'Noto Sans', 'DejaVu Sans', 'Noto Color Emoji', "
+            "'Segoe UI Emoji', 'Apple Color Emoji', Arial, sans-serif"
+        )
 
     html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <style>
-  {font_css}
+  {math_font_css}
 
   @page {{
     size: A4;
@@ -267,12 +275,15 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    letter-spacing: 0;
+    word-spacing: 0;
   }}
 
   body {{
     font-family: {font_family};
     font-size: 10pt;
     color: #1a1a1a;
+    text-rendering: optimizeLegibility;
   }}
 
   .header {{
@@ -289,7 +300,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
   .meta {{
     display: flex;
-    gap: 20px;
+    gap: 16px;
     justify-content: center;
     font-size: 9pt;
     color: #555;
@@ -308,6 +319,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     width: 100%;
     border-collapse: collapse;
     font-size: 9.5pt;
+    table-layout: fixed;
   }}
 
   thead th {{
@@ -317,33 +329,46 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     padding: 6px 8px;
     border: 1px solid #3560b0;
     text-align: center;
+    white-space: nowrap;
   }}
 
   thead th:nth-child(2) {{
     text-align: left;
+    width: 50%;
+  }}
+
+  thead th:not(:nth-child(2)) {{
+    width: auto;
   }}
 
   tbody td {{
     padding: 5px 8px;
     border: 1px solid #d0d0d0;
     vertical-align: middle;
+    white-space: nowrap;     /* raqamlar bo'linmaydi */
   }}
 
-  tbody tr:hover {{
-    filter: brightness(0.97);
+  /* Ism ustuni uzun bo'lsa wrap bo'lsin */
+  tbody td:nth-child(2) {{
+    white-space: normal;
+    word-break: break-word;
+  }}
+
+  tbody tr:nth-child(even) {{
+    background: #f8f9fa;
   }}
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>📊 Test natijasi — #{test.id}</h1>
+  <h1>Test natijasi &#8212; #{test.id}</h1>
 </div>
 
 <div class="meta">
-  <span>👥 Ishtirokchilar: <b>{stats['total_submissions']}</b></span>
-  <span>📝 Savollar: <b>{test.total_questions}</b></span>
-  <span>📐 Baholash: <b>{mode_text}</b></span>
+  <span>Ishtirokchilar: <b>{stats['total_submissions']}</b></span>
+  <span>Savollar: <b>{test.total_questions}</b></span>
+  <span>Baholash: <b>{mode_text}</b></span>
 </div>
 
 <table>
