@@ -228,32 +228,85 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     else:
         header_cells = "<th>#</th><th>Ism</th><th>To'g'ri</th><th>Jami</th>"
 
-    # Custom @font-face ishlatmaymiz — Pango bilan raqam spacing muammosi bo'ladi.
-    # Sistem fontlariga (DejaVu, Noto) ishonib, WeasyPrint o'zi tanlaydi.
-    # FAQAT matematik Unicode belgilar uchun NotoSansMath yuklaymiz (unicode-range bilan)
+    # fonts/ papkasidagi barcha Noto fontlarini yuklaymiz (unicode-range bilan)
+    # Shunday qilib har bir font faqat o'ziga tegishli belgilar uchun qo'llanadi
     _base_dir = os.path.dirname(os.path.abspath(__file__))
-    math_font_path = os.path.join(_base_dir, 'fonts', 'NotoSansMath-Regular.ttf')
+    _fd = os.path.join(_base_dir, 'fonts')
 
-    if os.path.exists(math_font_path):
-        math_font_css = f"""
+    def _font_face(name, filename, weight='normal', style='normal', unicode_range=None):
+        path = os.path.join(_fd, filename)
+        if not os.path.exists(path):
+            return ''
+        ur = f'\n            unicode-range: {unicode_range};' if unicode_range else ''
+        return f"""
         @font-face {{
-            font-family: 'NotoMath';
-            src: url('file://{math_font_path}') format('truetype');
-            /* Faqat matematik/fancy-text Unicode belgilar uchun */
-            unicode-range:
-                U+1D400-U+1D7FF,  /* Mathematical Alphanumeric Symbols */
-                U+2100-U+214F,    /* Letterlike Symbols */
-                U+2200-U+22FF,    /* Mathematical Operators */
-                U+27C0-U+27FF,    /* Misc Mathematical Symbols */
-                U+1D100-U+1D1FF;  /* Musical Symbols (ortiqcha ehtiyot) */
-        }}
-        """
+            font-family: '{name}';
+            src: url('file://{path}') format('truetype');
+            font-weight: {weight};
+            font-style: {style};{ur}
+        }}"""
+
+    font_css_parts = []
+
+    # 1. Noto Sans (lotin, kirill, yunon — asosiy)
+    font_css_parts.append(_font_face('AppFont', 'NotoSans-Regular.ttf'))
+    font_css_parts.append(_font_face('AppFont', 'NotoSans-Bold.ttf', weight='bold'))
+    font_css_parts.append(_font_face('AppFont', 'NotoSans-Italic.ttf', style='italic'))
+    font_css_parts.append(_font_face('AppFont', 'NotoSans-BoldItalic.ttf', weight='bold', style='italic'))
+
+    # 2. Noto Sans Math (Unicode fancy text: 𝐹𝑎𝑧𝑜, 𝒮𝒽, 𝑺𝒉...)
+    font_css_parts.append(_font_face('AppFont', 'NotoSansMath-Regular.ttf',
+        unicode_range=(
+            'U+1D400-U+1D7FF, U+2100-U+214F, '
+            'U+2200-U+22FF, U+27C0-U+27FF, U+1D100-U+1D1FF'
+        )
+    ))
+
+    # 3. Noto Sans Arabic
+    font_css_parts.append(_font_face('AppFont', 'NotoSansArabic-Regular.ttf',
+        unicode_range='U+0600-U+06FF, U+0750-U+077F, U+08A0-U+08FF, U+FB50-U+FBFF, U+FE70-U+FEFF'
+    ))
+    font_css_parts.append(_font_face('AppFont', 'NotoSansArabic-Bold.ttf', weight='bold',
+        unicode_range='U+0600-U+06FF, U+0750-U+077F'
+    ))
+
+    # 4. Noto Sans Hebrew
+    font_css_parts.append(_font_face('AppFont', 'NotoSansHebrew-Regular.ttf',
+        unicode_range='U+0590-U+05FF, U+FB1D-U+FB4F'
+    ))
+
+    # 5. Noto Sans Devanagari (hind, sanskrit)
+    font_css_parts.append(_font_face('AppFont', 'NotoSansDevanagari-Regular.ttf',
+        unicode_range='U+0900-U+097F, U+1CD0-U+1CFF, U+A8E0-U+A8FF'
+    ))
+
+    # 6. Noto Sans Thai
+    font_css_parts.append(_font_face('AppFont', 'NotoSansThai-Regular.ttf',
+        unicode_range='U+0E00-U+0E7F'
+    ))
+
+    # 7. Noto Emoji (mono — rang chiqmasa ham shakl ko'rinadi)
+    font_css_parts.append(_font_face('AppFont', 'NotoEmoji-Regular.ttf',
+        unicode_range=(
+            'U+1F300-U+1F9FF, U+1FA00-U+1FAFF, U+2600-U+27BF, '
+            'U+1F1E0-U+1F1FF, U+FE00-U+FE0F'
+        )
+    ))
+
+    math_font_css = '\n'.join(p for p in font_css_parts if p)
+
+    # Agar hech bo'lmasa bitta font mavjud bo'lsa AppFont ishlatamiz,
+    # aks holda faqat sistema fontlari bilan ketamiz
+    has_any_font = any(
+        os.path.exists(os.path.join(_fd, f))
+        for f in ['NotoSans-Regular.ttf', 'NotoSansMath-Regular.ttf']
+    )
+    if has_any_font:
         font_family = (
-            "'NotoMath', 'Noto Sans', 'DejaVu Sans', 'Noto Color Emoji', "
+            "'AppFont', 'Noto Sans', 'DejaVu Sans', 'Noto Color Emoji', "
             "'Segoe UI Emoji', 'Apple Color Emoji', Arial, sans-serif"
         )
     else:
-        math_font_css = ""
         font_family = (
             "'Noto Sans', 'DejaVu Sans', 'Noto Color Emoji', "
             "'Segoe UI Emoji', 'Apple Color Emoji', Arial, sans-serif"
