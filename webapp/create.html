@@ -355,9 +355,12 @@
             field.setAttribute('placeholder', placeholder);
             field.value = value;
             field.setAttribute('value', value);
-            field.addEventListener('input', () => {
+            
+            const handleInput = () => {
                 onInput(String(field.value || '').trim());
-            });
+            };
+            field.addEventListener('input', handleInput);
+            field.addEventListener('change', handleInput);
             return field;
         }
 
@@ -572,6 +575,46 @@
         } else if (WebApp.MainButton && typeof WebApp.MainButton.onClick === 'function') {
             WebApp.MainButton.onClick(handleMainButtonClick);
         }
+
+        // --- GLOBAL KEYBOARD SUPPORT ---
+        document.addEventListener('keydown', (e) => {
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            if (['input', 'textarea', 'math-field'].includes(activeTag)) {
+                return;
+            }
+
+            const key = e.key.toLowerCase();
+            const validKeys = ['a', 'b', 'c', 'd'];
+
+            if (validKeys.includes(key) && closedCount > 0) {
+                const nextEmpty = closedAnswers.findIndex(ans => !ans);
+                if (nextEmpty !== -1) {
+                    closedAnswers[nextEmpty] = key;
+                    selectionHaptic();
+                    renderSimpleClosedQuestions();
+                    updateMainButton();
+                    e.preventDefault();
+                    
+                    const nextEmptyBtn = document.querySelector('.question-row button:not(.selected)');
+                    if (nextEmptyBtn) {
+                        nextEmptyBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            }
+
+            if (key === 'backspace' || key === 'delete') {
+                if (closedCount > 0) {
+                    const lastFilled = closedAnswers.findLastIndex(a => a);
+                    if (lastFilled !== -1) {
+                        closedAnswers[lastFilled] = '';
+                        selectionHaptic();
+                        renderSimpleClosedQuestions();
+                        updateMainButton();
+                        e.preventDefault();
+                    }
+                }
+            }
+        });
 
         renderAll();
     </script>

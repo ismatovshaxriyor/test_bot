@@ -291,9 +291,13 @@
             field.setAttribute('placeholder', placeholder);
             field.value = value;
             field.setAttribute('value', value);
-            field.addEventListener('input', () => {
+            
+            const handleInput = () => {
                 onInput(String(field.value || '').trim());
-            });
+            };
+            field.addEventListener('input', handleInput);
+            field.addEventListener('change', handleInput);
+            
             return field;
         }
 
@@ -522,6 +526,72 @@
         } else if (WebApp.MainButton && typeof WebApp.MainButton.onClick === 'function') {
             WebApp.MainButton.onClick(handleMainButtonClick);
         }
+
+        // --- GLOBAL KEYBOARD SUPPORT (A-F) ---
+        document.addEventListener('keydown', (e) => {
+            // Ignore if user is typing inside an input, textarea, or math-field
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            if (['input', 'textarea', 'math-field'].includes(activeTag)) {
+                return;
+            }
+
+            const key = e.key.toLowerCase();
+            const validClosed4 = ['a', 'b', 'c', 'd'];
+            const validClosed6 = ['a', 'b', 'c', 'd', 'e', 'f'];
+
+            let handled = false;
+
+            // Avval 1-32 gacha бўш joyni qidiramiz
+            const nextEmpty4 = raschClosed4Answers.findIndex(ans => !ans);
+            if (nextEmpty4 !== -1 && validClosed4.includes(key)) {
+                raschClosed4Answers[nextEmpty4] = key;
+                handled = true;
+                selectionHaptic();
+                renderRaschClosed4Questions();
+                updateMainButton();
+            } 
+            // Agar 1-32 to'lgan bo'lsa, 33-35 ni tekshiramiz
+            else if (nextEmpty4 === -1) {
+                const nextEmpty6 = raschClosed6Answers.findIndex(ans => !ans);
+                if (nextEmpty6 !== -1 && validClosed6.includes(key)) {
+                    raschClosed6Answers[nextEmpty6] = key;
+                    handled = true;
+                    selectionHaptic();
+                    renderRaschClosed6Questions();
+                    updateMainButton();
+                }
+            }
+
+            if (handled) {
+                e.preventDefault();
+                // Oyna ichida avtomat skroll qilish
+                const nextEmptyBtn = document.querySelector('.question-row button:not(.selected)');
+                if (nextEmptyBtn) {
+                    nextEmptyBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+            
+            // Delete yoki Backspace bilan oxirgi kiritilgan yopiq javobni o'chirish
+            if (key === 'backspace' || key === 'delete') {
+                const lastFilled6 = raschClosed6Answers.findLastIndex(a => a);
+                if (lastFilled6 !== -1) {
+                    raschClosed6Answers[lastFilled6] = '';
+                    selectionHaptic();
+                    renderRaschClosed6Questions();
+                    updateMainButton();
+                    e.preventDefault();
+                } else {
+                    const lastFilled4 = raschClosed4Answers.findLastIndex(a => a);
+                    if (lastFilled4 !== -1) {
+                        raschClosed4Answers[lastFilled4] = '';
+                        selectionHaptic();
+                        renderRaschClosed4Questions();
+                        updateMainButton();
+                        e.preventDefault();
+                    }
+                }
+            }
+        });
 
         renderAll();
     </script>
