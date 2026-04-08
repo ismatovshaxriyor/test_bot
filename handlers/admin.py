@@ -384,9 +384,13 @@ async def admin_active_tests_callback(update: Update, context: ContextTypes.DEFA
         toggle_label = "🔕 Bekor qilish" if watching else "🔔 Kuzatish"
         keyboard.append([
             InlineKeyboardButton(
+                f"🔴 Tugatish (#{test.id})",
+                callback_data=f"end_test_{test.id}"
+            ),
+            InlineKeyboardButton(
                 f"{toggle_label} (#{test.id})",
                 callback_data=f"watch_test_{test.id}"
-            )
+            ),
         ])
 
     keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="admin_tests")])
@@ -430,6 +434,64 @@ async def admin_watch_toggle_callback(update: Update, context: ContextTypes.DEFA
         await query.answer(f"🔔 #{test_id} kuzatuvga qo'shildi!", show_alert=False)
 
     # Ro'yxatni yangilash
+    await admin_active_tests_callback(update, context)
+
+
+@admin_only
+async def admin_end_test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test tugatish — tasdiqlash so'rash"""
+    query = update.callback_query
+    await query.answer()
+
+    test_id = int(query.data.replace("end_test_", ""))
+
+    try:
+        test = Test.get_by_id(test_id)
+    except Test.DoesNotExist:
+        await query.answer("❌ Test topilmadi!", show_alert=True)
+        return
+
+    creator_name = test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Ha, tugatish", callback_data=f"confirm_end_{test_id}"),
+            InlineKeyboardButton("❌ Bekor", callback_data="admin_active_tests"),
+        ]
+    ]
+    await query.message.edit_text(
+        f"🔴 <b>Testni tugatish</b>\n\n"
+        f"📝 Test: <code>{test_id}</code>\n"
+        f"👤 Yaratuvchi: {creator_name}\n"
+        f"📊 Savollar: {test.total_questions}\n\n"
+        f"Testni tugatishni tasdiqlaysizmi?\n"
+        f"⚠️ Tugatilgan test yangi javoblarni qabul qilmaydi!",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+@admin_only
+async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test tugatishni tasdiqlash"""
+    from datetime import datetime
+    query = update.callback_query
+
+    test_id = int(query.data.replace("confirm_end_", ""))
+
+    try:
+        test = Test.get_by_id(test_id)
+    except Test.DoesNotExist:
+        await query.answer("❌ Test topilmadi!", show_alert=True)
+        return
+
+    test.is_active = False
+    test.ended_at = datetime.now()
+    test.save()
+
+    # Kuzatuvchilarni ham o'chirish (test tugadi)
+    AdminTestWatch.delete().where(AdminTestWatch.test == test).execute()
+
+    await query.answer(f"✅ #{test_id} test tugatildi!", show_alert=True)
     await admin_active_tests_callback(update, context)
 
 
@@ -681,5 +743,7 @@ def get_handlers():
         CallbackQueryHandler(tests_callback, pattern=r"^admin_tests$"),
         CallbackQueryHandler(admin_active_tests_callback, pattern=r"^admin_active_tests$"),
         CallbackQueryHandler(admin_watch_toggle_callback, pattern=r"^watch_test_"),
+        CallbackQueryHandler(admin_end_test_callback, pattern=r"^end_test_"),
+        CallbackQueryHandler(admin_confirm_end_test_callback, pattern=r"^confirm_end_"),
     ]
 

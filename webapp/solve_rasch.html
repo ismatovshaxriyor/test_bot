@@ -360,7 +360,16 @@
                     if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
                         WebApp.HapticFeedback.selectionChanged();
                     }
-                    renderQuestions();
+                    // Faqat shu satr tugmalarini yangilaymiz — renderQuestions() chaqirmaymiz!
+                    // (renderQuestions barcha math-field larni qayta yaratib, open2 javoblarini
+                    //  o'chirib qo'yishi mumkin edi)
+                    optsDiv.querySelectorAll('.option-btn').forEach(b => {
+                        if (b.innerText.toLowerCase() === value) {
+                            b.classList.add('selected');
+                        } else {
+                            b.classList.remove('selected');
+                        }
+                    });
                     updateMainButton();
                 };
                 optsDiv.appendChild(btn);

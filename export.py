@@ -177,119 +177,189 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
 
 def export_to_pdf(stats: Dict, test: Test) -> str:
-    """Natijalarni PDF faylga yozish"""
-    from fpdf import FPDF
+    """Natijalarni PDF faylga yozish (HTML → WeasyPrint)"""
+    from weasyprint import HTML, CSS
 
-    pdf = FPDF()
-    pdf.add_page()
-
-    # Unicode uchun font — turli OS larda font joylashuvini tekshirish
-    font_paths = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux
-        '/usr/share/fonts/TTF/DejaVuSans.ttf',  # Arch Linux
-        os.path.expanduser('~/Library/Fonts/DejaVuSans.ttf'),  # macOS (user)
-        '/Library/Fonts/DejaVuSans.ttf',  # macOS (system)
-        '/System/Library/Fonts/DejaVuSans.ttf',  # macOS (system alt)
-    ]
-    font_paths_bold = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-        '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
-        os.path.expanduser('~/Library/Fonts/DejaVuSans-Bold.ttf'),
-        '/Library/Fonts/DejaVuSans-Bold.ttf',
-    ]
-
-    font_regular = next((p for p in font_paths if os.path.exists(p)), None)
-    font_bold = next((p for p in font_paths_bold if os.path.exists(p)), None)
-
-    if font_regular:
-        pdf.add_font('DejaVu', '', font_regular, uni=True)
-        if font_bold:
-            pdf.add_font('DejaVu', 'B', font_bold, uni=True)
-        else:
-            pdf.add_font('DejaVu', 'B', font_regular, uni=True)
-        font_name = 'DejaVu'
-    else:
-        font_name = 'Helvetica'  # Fallback
-
-    # Sarlavha
-    pdf.set_font(font_name, 'B', 16)
-    pdf.cell(0, 12, f'Test natijasi — {test.id}', new_x="LMARGIN", new_y="NEXT", align='C')
-    pdf.ln(5)
-
-    # Ma'lumotlar
-    pdf.set_font(font_name, '', 11)
-    pdf.cell(0, 7, f'Ishtirokchilar: {stats["total_submissions"]} ta', new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f'Savollar soni: {test.total_questions} ta', new_x="LMARGIN", new_y="NEXT")
-    mode_text = "Rash modeli" if test.scoring_mode == "rasch" else "Oddiy"
-    pdf.cell(0, 7, f'Baholash: {mode_text}', new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
-
-    # Jadval
     rasch_mode = test.scoring_mode == "rasch"
-
-    # Sarlavha
-    pdf.set_font(font_name, 'B', 10)
-    pdf.set_fill_color(68, 114, 196)
-    pdf.set_text_color(255, 255, 255)
-
-    if rasch_mode:
-        col_widths = [10, 62, 18, 14, 24, 20]
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Rash", "Daraja"]
-    else:
-        col_widths = [10, 95, 22, 20]
-        headers = ["#", "Ism", "To'g'ri", "Jami"]
-
-    for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 8, header, border=1, fill=True, align='C')
-    pdf.ln()
-
-    # Ma'lumotlar
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font(font_name, '', 9)
-
     submissions = stats['submissions']
+    mode_text = "Rash modeli" if rasch_mode else "Oddiy"
 
-    # Daraja ranglari (RGB)
+    # Daraja ranglari
     grade_colors = {
-        'A+': (34, 177, 76),    # Yashil
-        'A':  (123, 198, 126),  # Och yashil
-        'B+': (255, 242, 0),    # Sariq
-        'B':  (255, 217, 102),  # Och sariq
-        'C+': (244, 177, 131),  # Och qizil
-        'C':  (255, 127, 127),  # Qizil
-        '-':  (217, 217, 217),  # Kulrang
+        'A+': '#22b14c',
+        'A':  '#7bc67e',
+        'B+': '#fff200',
+        'B':  '#ffd966',
+        'C+': '#f4b183',
+        'C':  '#ff7f7f',
+        '-':  '#d9d9d9',
     }
+
+    # Jadval satrlari
+    rows_html = ""
     for idx, sub in enumerate(submissions):
         num = idx + 1
-        name = sub['user'][:25]  # Ismni qisqartirish
+        name = sub['user']  # HTML brauzer render qiladi — emoji/unicode muammo yo'q!
 
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
-            # Daraja bo'yicha rang
-            color = grade_colors.get(grade)
-            if color:
-                pdf.set_fill_color(*color)
-                fill = True
-            else:
-                fill = False
-        else:
-            fill = False
-
-        pdf.cell(col_widths[0], 7, str(num), border=1, fill=fill, align='C')
-        pdf.cell(col_widths[1], 7, name, border=1, fill=fill)
-        pdf.cell(col_widths[2], 7, str(sub['correct']), border=1, fill=fill, align='C')
-        pdf.cell(col_widths[3], 7, str(sub['total']), border=1, fill=fill, align='C')
-
-        if rasch_mode:
+            bg = grade_colors.get(grade, '#ffffff')
+            # Sariq/yashil fonda qora matn, boshqalarda qora
+            text_color = '#222' if grade in ('A+', 'A', 'B+', 'B') else '#222'
+            row_style = f'background:{bg};'
             rasch_val = sub.get('rasch_normalized', sub['percentage'])
-            pdf.cell(col_widths[4], 7, str(rasch_val), border=1, fill=fill, align='C')
-            pdf.cell(col_widths[5], 7, grade, border=1, fill=fill, align='C')
+            extra_cells = f'<td>{rasch_val}</td><td>{grade}</td>'
+        else:
+            row_style = 'background:#ffffff;' if idx % 2 == 0 else 'background:#f8f9fa;'
+            extra_cells = ''
 
-        pdf.ln()
+        rows_html += f"""
+        <tr style="{row_style}">
+            <td style="text-align:center">{num}</td>
+            <td>{name}</td>
+            <td style="text-align:center">{sub['correct']}</td>
+            <td style="text-align:center">{sub['total']}</td>
+            {extra_cells}
+        </tr>"""
 
-    # Faylni saqlash
+    # Jadval sarlavhalari
+    if rasch_mode:
+        header_cells = "<th>#</th><th>Ism</th><th>To'g'ri</th><th>Jami</th><th>Rash</th><th>Daraja</th>"
+    else:
+        header_cells = "<th>#</th><th>Ism</th><th>To'g'ri</th><th>Jami</th>"
+
+    # Shrift yo'li (loyiha ichidagi NotoSans)
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
+    font_regular = os.path.join(_base_dir, 'fonts', 'NotoSans-Regular.ttf')
+    font_bold    = os.path.join(_base_dir, 'fonts', 'NotoSans-Bold.ttf')
+
+    if os.path.exists(font_regular):
+        font_css = f"""
+        @font-face {{
+            font-family: 'NotoSans';
+            src: url('file://{font_regular}') format('truetype');
+            font-weight: normal;
+        }}
+        @font-face {{
+            font-family: 'NotoSans';
+            src: url('file://{font_bold}') format('truetype');
+            font-weight: bold;
+        }}
+        """
+        font_family = "NotoSans, 'Segoe UI Emoji', Arial, sans-serif"
+    else:
+        font_css = ""
+        font_family = "'Segoe UI Emoji', Arial, sans-serif"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  {font_css}
+
+  @page {{
+    size: A4;
+    margin: 15mm 12mm;
+  }}
+
+  * {{
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }}
+
+  body {{
+    font-family: {font_family};
+    font-size: 10pt;
+    color: #1a1a1a;
+  }}
+
+  .header {{
+    text-align: center;
+    margin-bottom: 10px;
+  }}
+
+  .header h1 {{
+    font-size: 16pt;
+    font-weight: bold;
+    color: #1a1a1a;
+    margin-bottom: 4px;
+  }}
+
+  .meta {{
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    font-size: 9pt;
+    color: #555;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }}
+
+  .meta span {{
+    background: #f0f4ff;
+    border: 1px solid #c7d5f5;
+    border-radius: 5px;
+    padding: 2px 8px;
+  }}
+
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+  }}
+
+  thead th {{
+    background: #4472c4;
+    color: #ffffff;
+    font-weight: bold;
+    padding: 6px 8px;
+    border: 1px solid #3560b0;
+    text-align: center;
+  }}
+
+  thead th:nth-child(2) {{
+    text-align: left;
+  }}
+
+  tbody td {{
+    padding: 5px 8px;
+    border: 1px solid #d0d0d0;
+    vertical-align: middle;
+  }}
+
+  tbody tr:hover {{
+    filter: brightness(0.97);
+  }}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📊 Test natijasi — #{test.id}</h1>
+</div>
+
+<div class="meta">
+  <span>👥 Ishtirokchilar: <b>{stats['total_submissions']}</b></span>
+  <span>📝 Savollar: <b>{test.total_questions}</b></span>
+  <span>📐 Baholash: <b>{mode_text}</b></span>
+</div>
+
+<table>
+  <thead>
+    <tr>{header_cells}</tr>
+  </thead>
+  <tbody>
+    {rows_html}
+  </tbody>
+</table>
+
+</body>
+</html>"""
+
     filepath = os.path.join(tempfile.gettempdir(), f"test_{test.id}.pdf")
-    pdf.output(filepath)
+    HTML(string=html).write_pdf(filepath)
     return filepath
 
 
