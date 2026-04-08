@@ -441,15 +441,17 @@ async def admin_watch_toggle_callback(update: Update, context: ContextTypes.DEFA
 async def admin_end_test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test tugatish — tasdiqlash so'rash"""
     query = update.callback_query
-    await query.answer()
+    # query.answer() ni HALI chaqirmaymiz — test topilmasa xato ko'ramiz
 
-    test_id = int(query.data.replace("end_test_", ""))
-
+    test_id_str = query.data.replace("end_test_", "")
     try:
+        test_id = int(test_id_str)
         test = Test.get_by_id(test_id)
-    except Test.DoesNotExist:
+    except (ValueError, Test.DoesNotExist):
         await query.answer("❌ Test topilmadi!", show_alert=True)
         return
+
+    await query.answer()  # Endi xavfsiz ravishda javob beramiz
 
     creator_name = test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
     keyboard = [
@@ -476,11 +478,11 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
     from datetime import datetime
     query = update.callback_query
 
-    test_id = int(query.data.replace("confirm_end_", ""))
-
+    test_id_str = query.data.replace("confirm_end_", "")
     try:
+        test_id = int(test_id_str)
         test = Test.get_by_id(test_id)
-    except Test.DoesNotExist:
+    except (ValueError, Test.DoesNotExist):
         await query.answer("❌ Test topilmadi!", show_alert=True)
         return
 
