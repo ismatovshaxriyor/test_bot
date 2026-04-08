@@ -385,7 +385,7 @@ async def admin_active_tests_callback(update: Update, context: ContextTypes.DEFA
         keyboard.append([
             InlineKeyboardButton(
                 f"🔴 Tugatish (#{test.id})",
-                callback_data=f"end_test_{test.id}"
+                callback_data=f"admin_end_{test.id}"
             ),
             InlineKeyboardButton(
                 f"{toggle_label} (#{test.id})",
@@ -443,7 +443,7 @@ async def admin_end_test_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     # query.answer() ni HALI chaqirmaymiz — test topilmasa xato ko'ramiz
 
-    test_id_str = query.data.replace("end_test_", "")
+    test_id_str = query.data.replace("admin_end_", "")
     try:
         test_id = int(test_id_str)
         test = Test.get_by_id(test_id)
@@ -456,7 +456,7 @@ async def admin_end_test_callback(update: Update, context: ContextTypes.DEFAULT_
     creator_name = test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
     keyboard = [
         [
-            InlineKeyboardButton("✅ Ha, tugatish", callback_data=f"confirm_end_{test_id}"),
+            InlineKeyboardButton("✅ Ha, tugatish", callback_data=f"admin_confirm_end_{test_id}"),
             InlineKeyboardButton("❌ Bekor", callback_data="admin_active_tests"),
         ]
     ]
@@ -478,7 +478,7 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
     from datetime import datetime
     query = update.callback_query
 
-    test_id_str = query.data.replace("confirm_end_", "")
+    test_id_str = query.data.replace("admin_confirm_end_", "")
     try:
         test_id = int(test_id_str)
         test = Test.get_by_id(test_id)
@@ -745,7 +745,7 @@ def get_handlers():
         CallbackQueryHandler(tests_callback, pattern=r"^admin_tests$"),
         CallbackQueryHandler(admin_active_tests_callback, pattern=r"^admin_active_tests$"),
         CallbackQueryHandler(admin_watch_toggle_callback, pattern=r"^watch_test_"),
-        CallbackQueryHandler(admin_end_test_callback, pattern=r"^end_test_"),
-        CallbackQueryHandler(admin_confirm_end_test_callback, pattern=r"^confirm_end_"),
+        CallbackQueryHandler(admin_end_test_callback, pattern=r"^admin_end_"),
+        CallbackQueryHandler(admin_confirm_end_test_callback, pattern=r"^admin_confirm_end_"),
     ]
 
