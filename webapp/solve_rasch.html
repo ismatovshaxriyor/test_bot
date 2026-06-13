@@ -635,8 +635,9 @@
             button.textContent = 'Yuklanmoqda...';
 
             try {
-                const query = telegramUserId > 0 ? `?user_id=${telegramUserId}` : '';
-                const response = await fetch(`/api/test/${code}${query}`);
+                const initData = WebApp.initData || '';
+                const headers = initData ? { 'Authorization': `tma ${initData}` } : {};
+                const response = await fetch(`/api/test/${code}`, { headers });
                 const payload = await response.json();
 
                 if (!response.ok) {
