@@ -337,7 +337,16 @@
                     if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
                         WebApp.HapticFeedback.selectionChanged();
                     }
-                    renderQuestions();
+                    // Faqat shu satr tugmalarini yangilaymiz — renderQuestions() chaqirmaymiz!
+                    // (aks holda aralash testlarda math-field lar qayta yaratilib, yozilgan
+                    //  ochiq javoblar va fokus yo'qolishi mumkin edi)
+                    optsDiv.querySelectorAll('.option-btn').forEach(b => {
+                        if (b.innerText.toLowerCase() === value) {
+                            b.classList.add('selected');
+                        } else {
+                            b.classList.remove('selected');
+                        }
+                    });
                     updateMainButton();
                 };
                 optsDiv.appendChild(btn);
@@ -355,9 +364,23 @@
             field.setAttribute('placeholder', placeholder);
             field.value = value;
             field.setAttribute('value', value);
-            field.addEventListener('input', () => {
-                onInput(String(field.value || '').trim());
-            });
+
+            const handleInput = () => {
+                let val = '';
+                if (typeof field.getValue === 'function') {
+                    val = field.getValue();
+                } else if (field.value !== undefined) {
+                    val = field.value;
+                }
+                onInput(String(val || '').trim());
+            };
+
+            field.addEventListener('input', handleInput);
+            field.addEventListener('change', handleInput);
+            field.addEventListener('focusout', handleInput);
+            field.addEventListener('blur', handleInput);
+            field.addEventListener('keyup', handleInput);
+
             return field;
         }
 
