@@ -13,7 +13,7 @@ from database import init_db
 # Handlerlarni import qilish
 from handlers import start, test_create, test_solve, test_manage, admin, inline
 from membership import check_membership_callback
-from telegram.ext import CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 from keyboards import main_menu_keyboard
 
 # Logging sozlash
@@ -34,6 +34,11 @@ BOT_COMMANDS = [
 
 async def global_ortga_handler(update, context):
     """Global levelda (Conversationdan tashqari) kelgan 'Ortga' ni ushlab, menyuni ko'rsatadi"""
+    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+
+
+async def global_cancel_handler(update, context):
+    """Suhbatdan tashqarida /cancel kelganda menyuni ko'rsatadi (suhbat ichida fallback ishlaydi)"""
     await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
 
 
@@ -90,6 +95,9 @@ async def main():
 
     # Global Ortga catch-all (agar user Conversation ichida bo'lmasa ishlashi uchun oxirida qo'shildi!)
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r'^(Ortga|❌ Bekor qilish)$'), global_ortga_handler))
+
+    # Global /cancel catch-all (suhbat ichidagi fallback birinchi ishlaydi, bu faqat tashqarida)
+    application.add_handler(CommandHandler("cancel", global_cancel_handler, filters=filters.ChatType.PRIVATE))
 
     # Botni ishga tushirish
     logger.info("🚀 Bot ishga tushmoqda...")

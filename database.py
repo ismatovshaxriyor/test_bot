@@ -8,7 +8,12 @@ from peewee import (
 from config import DATABASE_PATH
 
 # Database yaratish
-db = SqliteDatabase(DATABASE_PATH)
+# WAL rejimi: bot va FastAPI bir vaqtda yozayotganda "database is locked" ni kamaytiradi.
+# busy_timeout: lock band bo'lsa darhol xato bermay, 5 sekundgacha kutadi.
+db = SqliteDatabase(DATABASE_PATH, pragmas={
+    "journal_mode": "wal",
+    "busy_timeout": 5000,
+})
 
 
 class BaseModel(Model):
@@ -97,10 +102,28 @@ class AdminTestWatch(BaseModel):
         primary_key = CompositeKey("admin", "test")
 
 
+def _migrate_unique_submissions():
+    """Bir foydalanuvchi bir testni faqat bir marta topshira olishini kafolatlash.
+
+    Avval mavjud dublikatlarni tozalaydi (har (test, user) uchun eng eski yozuv
+    qoldiriladi), so'ng unique indeks o'rnatadi — bu poyga holatlaridagi (TOCTOU)
+    takroriy topshirishlarni bazaviy darajada bloklaydi.
+    """
+    db.execute_sql(
+        "DELETE FROM test_submissions "
+        "WHERE id NOT IN (SELECT MIN(id) FROM test_submissions GROUP BY test_id, user_id)"
+    )
+    db.execute_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_submission_test_user "
+        "ON test_submissions (test_id, user_id)"
+    )
+
+
 def init_db():
     """Databaseni ishga tushirish"""
     db.connect()
     db.create_tables([User, Test, TestSubmission, Channel, AdminTestWatch])
+    _migrate_unique_submissions()
     print("✅ Database tayyor!")
 
 

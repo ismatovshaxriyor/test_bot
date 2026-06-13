@@ -109,27 +109,6 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_ANSWERS
 
 
-async def scoring_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Baholash turini saqlash"""
-    query = update.callback_query
-    await query.answer()
-
-    mode = query.data.replace("scoring_", "")  # 'simple' yoki 'rasch'
-    context.user_data['scoring_mode'] = mode
-
-    mode_text = "📊 Oddiy" if mode == "simple" else "📐 Rash"
-
-    await query.message.edit_text(
-        f"📝 <b>Yangi test yaratish</b>\n\n"
-        f"Baholash: <b>{mode_text}</b>\n\n"
-        f"To'g'ri javoblarni kiriting.\n"
-        f"Masalan: <code>abbacabbac</code>\n\n"
-        f"❌ Bekor qilish: /cancel",
-        parse_mode="HTML"
-    )
-    return WAITING_ANSWERS
-
-
 @membership_required
 async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Javoblarni qabul qilish"""
@@ -281,10 +260,12 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             answers_str = json.dumps(normalized_questions, ensure_ascii=False)
             questions_count = len(normalized_questions)
         else:
-            # Simple string
+            # Simple string — faqat A, B, C, D harflari (yechish interfeysi ham shularni qabul qiladi)
             answers_str = data.get("answers", "").strip().lower()
-            if not answers_str or not answers_str.isalpha():
-                await update.message.reply_text("❌ Javoblar noto'g'ri formatda!")
+            if not answers_str or not re.fullmatch(r"[a-d]+", answers_str):
+                await update.message.reply_text(
+                    "❌ Javoblar faqat A, B, C, D harflaridan iborat bo'lishi kerak!"
+                )
                 return ConversationHandler.END
             questions_count = len(answers_str)
 

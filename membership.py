@@ -1,5 +1,6 @@
 """Membership tekshirish decorator va yordamchi funksiyalar"""
 import logging
+import time
 from functools import wraps
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -9,14 +10,29 @@ from database import Channel
 
 logger = logging.getLogger(__name__)
 
+# Tasdiqlangan a'zolik keshi: {user_id: muddat_tugashi (epoch)}
+# Faqat "barcha kanallarga a'zo" holati keshlanadi — bu har bosishda Telegram
+# API'siga so'rov yuborishni kamaytiradi. A'zo bo'lmagan foydalanuvchi keshlanmaydi,
+# shuning uchun kanalga qo'shilgach darhol ("✅ Tekshirish" bilan) ochiladi.
+_membership_cache: dict[int, float] = {}
+_MEMBERSHIP_CACHE_TTL = 180  # 3 daqiqa
 
-async def check_user_membership(bot, user_id: int) -> tuple[bool, list]:
+
+async def check_user_membership(bot, user_id: int, use_cache: bool = True) -> tuple[bool, list]:
     """
     Foydalanuvchi barcha kanallarga a'zo ekanligini tekshirish
+
+    Args:
+        use_cache: True bo'lsa, yaqinda tasdiqlangan a'zolikni keshdan oladi.
 
     Returns:
         (all_joined: bool, not_joined_channels: list)
     """
+    if use_cache:
+        expires_at = _membership_cache.get(user_id)
+        if expires_at and expires_at > time.time():
+            return True, []
+
     channels = list(Channel.select().where(Channel.is_active == True))
     logger.info("MEMBERSHIP CHECK: user_id=%s active_channels=%s", user_id, len(channels))
 
@@ -49,7 +65,14 @@ async def check_user_membership(bot, user_id: int) -> tuple[bool, list]:
                 user_id, channel.channel_id
             )
 
-    return len(not_joined) == 0, not_joined
+    all_joined = len(not_joined) == 0
+    if all_joined:
+        _membership_cache[user_id] = time.time() + _MEMBERSHIP_CACHE_TTL
+    else:
+        # A'zolik buzilgan bo'lsa eski keshni tozalaymiz
+        _membership_cache.pop(user_id, None)
+
+    return all_joined, not_joined
 
 
 def get_join_keyboard(channels: list) -> InlineKeyboardMarkup:
@@ -120,7 +143,8 @@ async def check_membership_callback(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     user = update.effective_user
 
-    all_joined, not_joined = await check_user_membership(context.bot, user.id)
+    # Keshni chetlab, yangi holatni tekshiramiz (foydalanuvchi hozirgina qo'shilgan bo'lishi mumkin)
+    all_joined, not_joined = await check_user_membership(context.bot, user.id, use_cache=False)
 
     if all_joined:
         await query.answer("✅ Rahmat! Endi botdan foydalanishingiz mumkin.", show_alert=True)
