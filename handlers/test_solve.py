@@ -7,6 +7,8 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
+from peewee import IntegrityError
+
 from database import get_or_create_user, Test, TestSubmission, AdminTestWatch
 from utils import check_answers, parse_simple_answers
 from config import ADMIN_ID
@@ -115,16 +117,29 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         [KeyboardButton("Ortga")]
     ], resize_keyboard=True)
 
-    await update.message.reply_html(
-        f"📝 <b>Test: {code}</b>\n\n"
-        f"❓ Savollar soni: {test.total_questions} ta\n\n"
-        f"Javoblaringizni ikki usuldan birida kiriting:\n"
-        f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
-        f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
-        f"Yoki pastdagi maxsus tugma orqali WebApp da ishlashingiz mumkin\n\n"
-        f"❌ Bekor qilish: /cancel yoki Ortga",
-        reply_markup=keyboard
-    )
+    # Aralash/Rash testlarda ochiq savollar bor — matn bilan yechib bo'lmaydi
+    is_mixed = bool(test.correct_answers) and test.correct_answers.startswith("[{")
+
+    if is_mixed:
+        await update.message.reply_html(
+            f"📝 <b>Test: {code}</b>\n\n"
+            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"⚠️ Bu testda ochiq savollar bor — uni faqat WebApp orqali yechish mumkin.\n"
+            f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
+            f"❌ Bekor qilish: /cancel yoki Ortga",
+            reply_markup=keyboard
+        )
+    else:
+        await update.message.reply_html(
+            f"📝 <b>Test: {code}</b>\n\n"
+            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"Javoblaringizni ikki usuldan birida kiriting:\n"
+            f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
+            f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
+            f"Yoki pastdagi maxsus tugma orqali WebApp da ishlashingiz mumkin\n\n"
+            f"❌ Bekor qilish: /cancel yoki Ortga",
+            reply_markup=keyboard
+        )
 
     return WAITING_USER_ANSWERS
 
@@ -185,14 +200,23 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
     # Javoblarni tekshirish
     correct_count, total, results = check_answers(test.correct_answers, answers)
 
-    # Natijani saqlash
-    submission = TestSubmission.create(
-        test=test,
-        user=db_user,
-        answers=answers,
-        correct_count=correct_count,
-        total_count=total
-    )
+    # Natijani saqlash (unique indeks poyga holatidagi takroriy topshirishni bloklaydi)
+    try:
+        submission = TestSubmission.create(
+            test=test,
+            user=db_user,
+            answers=answers,
+            correct_count=correct_count,
+            total_count=total
+        )
+    except IntegrityError:
+        await update.message.reply_text(
+            "⚠️ Siz bu testni allaqachon ishlagansiz!",
+            reply_markup=main_menu_keyboard()
+        )
+        context.user_data.pop('current_test', None)
+        context.user_data.pop('db_user', None)
+        return ConversationHandler.END
 
     # Foydalanuvchiga qabul qilinganini yuborish (yakuniy natija test yakunlangach yuboriladi)
     await update.message.reply_html(
@@ -324,13 +348,21 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         correct_count, total, _ = check_answers(test.correct_answers, safe_answers)
 
-        submission = TestSubmission.create(
-            test=test,
-            user=db_user,
-            answers=safe_answers,
-            correct_count=correct_count,
-            total_count=total
-        )
+        # Unique indeks poyga holatidagi takroriy topshirishni bazaviy darajada bloklaydi
+        try:
+            submission = TestSubmission.create(
+                test=test,
+                user=db_user,
+                answers=safe_answers,
+                correct_count=correct_count,
+                total_count=total
+            )
+        except IntegrityError:
+            await update.message.reply_text(
+                "⚠️ Siz bu testni allaqachon ishlagansiz!",
+                reply_markup=main_menu_keyboard()
+            )
+            return ConversationHandler.END
 
         # Foydalanuvchiga qabul qilinganini yuborish (yakuniy natija test yakunlangach yuboriladi)
         await update.message.reply_html(

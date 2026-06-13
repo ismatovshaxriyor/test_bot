@@ -6,7 +6,7 @@
     <title>Javoblarni kiritish</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://unpkg.com/mathlive"></script>
+    <script defer src="https://unpkg.com/mathlive@0.110.0"></script>
 
     <style>
         body {
@@ -635,8 +635,9 @@
             button.textContent = 'Yuklanmoqda...';
 
             try {
-                const query = telegramUserId > 0 ? `?user_id=${telegramUserId}` : '';
-                const response = await fetch(`/api/test/${code}${query}`);
+                const initData = WebApp.initData || '';
+                const headers = initData ? { 'Authorization': `tma ${initData}` } : {};
+                const response = await fetch(`/api/test/${code}`, { headers });
                 const payload = await response.json();
 
                 if (!response.ok) {

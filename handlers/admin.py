@@ -1,4 +1,10 @@
 """Admin handlerlari"""
+import asyncio
+import os
+import sqlite3
+import tempfile
+from datetime import datetime
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, CommandHandler, CallbackQueryHandler,
@@ -7,7 +13,7 @@ from telegram.ext import (
 from telegram.error import TelegramError
 
 from database import User, Test, TestSubmission, Channel, AdminTestWatch
-from config import ADMIN_ID
+from config import ADMIN_ID, DATABASE_PATH
 
 # Conversation states
 WAITING_CHANNEL_ID = 0
@@ -51,6 +57,7 @@ def admin_keyboard():
             InlineKeyboardButton("📝 Testlar", callback_data="admin_tests"),
             InlineKeyboardButton("🟢 Faol testlar", callback_data="admin_active_tests"),
         ],
+        [InlineKeyboardButton("💾 Zaxira olish (Backup)", callback_data="admin_backup")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -498,6 +505,51 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
 
 
 @admin_only
+async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Database'ning zaxira nusxasini olib, adminga yuborish"""
+    query = update.callback_query
+    await query.answer("💾 Zaxira tayyorlanmoqda...")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(tempfile.gettempdir(), f"test_bot_backup_{timestamp}.db")
+
+    try:
+        # SQLite backup API — bot/API bir vaqtda yozayotgan bo'lsa ham izchil snapshot beradi
+        src = sqlite3.connect(DATABASE_PATH)
+        try:
+            dst = sqlite3.connect(backup_path)
+            try:
+                with dst:
+                    src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+
+        size_mb = os.path.getsize(backup_path) / (1024 * 1024)
+
+        with open(backup_path, "rb") as f:
+            await query.message.reply_document(
+                document=f,
+                filename=f"test_bot_backup_{timestamp}.db",
+                caption=(
+                    f"💾 <b>Database zaxira nusxasi</b>\n\n"
+                    f"📅 Sana: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                    f"📦 Hajmi: {size_mb:.2f} MB"
+                ),
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        await query.message.reply_text(f"❌ Zaxira olishda xatolik: {e}")
+    finally:
+        if os.path.exists(backup_path):
+            try:
+                os.remove(backup_path)
+            except OSError:
+                pass
+
+
+@admin_only
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Barcha foydalanuvchilarga xabar yuborish"""
     if not context.args:
@@ -525,6 +577,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sent += 1
         except Exception:
             failed += 1
+
+        # Telegram flood limitiga (~30 msg/sek) tushmaslik uchun
+        await asyncio.sleep(0.05)
 
         if (sent + failed) % 10 == 0:
             try:
@@ -735,6 +790,7 @@ def get_handlers():
         add_channel_conv,
         add_admin_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),
+        CallbackQueryHandler(admin_backup_callback, pattern=r"^admin_backup$"),
         CallbackQueryHandler(channels_callback, pattern=r"^admin_channels$"),
         CallbackQueryHandler(list_channels_callback, pattern=r"^list_channels$"),
         CallbackQueryHandler(delete_channel_callback, pattern=r"^del_channel_"),

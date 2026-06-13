@@ -481,32 +481,41 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("📭 Hali hech kim test yechmagan.")
         return
 
+    import os
+    filepath = None
     try:
-        import os
         if fmt == 'excel':
             filepath = export_to_excel(stats, test)
-            await query.message.reply_document(
-                document=open(filepath, 'rb'),
-                filename=f"test_{code}.xlsx",
-                caption=f"📊 Test {code} natijalari (Excel)"
-            )
+            with open(filepath, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=f"test_{code}.xlsx",
+                    caption=f"📊 Test {code} natijalari (Excel)"
+                )
         elif fmt == 'pdf':
             filepath = export_to_pdf(stats, test)
-            await query.message.reply_document(
-                document=open(filepath, 'rb'),
-                filename=f"test_{code}.pdf",
-                caption=f"📊 Test {code} natijalari (PDF)"
-            )
+            with open(filepath, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=f"test_{code}.pdf",
+                    caption=f"📊 Test {code} natijalari (PDF)"
+                )
         elif fmt == 'chart':
             filepath = export_chart(stats, test)
-            await query.message.reply_photo(
-                photo=open(filepath, 'rb'),
-                caption=f"📊 Test {code} — Tahlil grafigi"
-            )
-        # Vaqtinchalik faylni o'chirish
-        os.remove(filepath)
+            with open(filepath, 'rb') as f:
+                await query.message.reply_photo(
+                    photo=f,
+                    caption=f"📊 Test {code} — Tahlil grafigi"
+                )
     except Exception as e:
         await query.message.reply_text(f"❌ Fayl yaratishda xatolik: {str(e)}")
+    finally:
+        # Vaqtinchalik faylni o'chirish
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
 
 
 def get_handlers():

@@ -1,14 +1,22 @@
+import hashlib
+import hmac
 import json
 import os
+import time
 import urllib.request
 from typing import Optional
+from urllib.parse import parse_qsl
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from config import BOT_TOKEN, BOT_USERNAME
 from database import Test, TestSubmission, User, init_db
+
+
+# initData imzosining maksimal yaroqlilik muddati (sekundlarda)
+INIT_DATA_MAX_AGE = 24 * 60 * 60  # 24 soat
 
 
 init_db()
@@ -40,6 +48,75 @@ def _resolve_bot_username() -> str:
 
 
 RESOLVED_BOT_USERNAME = _resolve_bot_username()
+
+
+def _extract_init_data(authorization: Optional[str]) -> str:
+    """Authorization sarlavhasidan Telegram initData ni ajratib olish.
+
+    Telegram konvensiyasi: `Authorization: tma <init-data>`
+    """
+    if not authorization:
+        return ""
+    prefix = "tma "
+    if authorization.startswith(prefix):
+        return authorization[len(prefix):].strip()
+    return ""
+
+
+def _verify_init_data(init_data: str) -> Optional[int]:
+    """Telegram WebApp initData ni HMAC-SHA256 bilan tekshirish.
+
+    Returns:
+        - ishonchli telegram user_id (int) — imzo to'g'ri va user mavjud bo'lsa
+        - None — initData umuman yuborilmagan (brauzer/preview rejimi)
+
+    Raises:
+        HTTPException(401) — initData yuborilgan, lekin imzo yaroqsiz/eskirgan
+    """
+    if not init_data:
+        return None
+
+    if not BOT_TOKEN:
+        # Token bo'lmasa imzoni tekshirib bo'lmaydi — ishonchsiz ma'lumotni qabul qilmaymiz.
+        raise HTTPException(status_code=503, detail="Server autentifikatsiyaga sozlanmagan.")
+
+    try:
+        parsed = dict(parse_qsl(init_data, strict_parsing=True, keep_blank_values=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="initData formati noto'g'ri.") from exc
+
+    received_hash = parsed.pop("hash", None)
+    if not received_hash:
+        raise HTTPException(status_code=401, detail="initData imzosi topilmadi.")
+
+    # data_check_string: hash dan tashqari barcha kalitlar alifbo tartibida "key=value"
+    data_check_string = "\n".join(f"{key}={parsed[key]}" for key in sorted(parsed))
+
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    calculated_hash = hmac.new(
+        secret_key, data_check_string.encode(), hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(calculated_hash, received_hash):
+        raise HTTPException(status_code=401, detail="initData imzosi yaroqsiz.")
+
+    # auth_date orqali eskirganlikni tekshirish (replay hujumlariga qarshi)
+    auth_date = parsed.get("auth_date", "")
+    if auth_date.isdigit():
+        if time.time() - int(auth_date) > INIT_DATA_MAX_AGE:
+            raise HTTPException(status_code=401, detail="initData muddati o'tgan.")
+
+    user_raw = parsed.get("user")
+    if not user_raw:
+        return None
+
+    try:
+        user_obj = json.loads(user_raw)
+        return int(user_obj["id"])
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=401, detail="initData foydalanuvchi ma'lumoti noto'g'ri."
+        ) from exc
 
 
 def _is_mixed_test(test: Test) -> bool:
@@ -179,8 +256,14 @@ async def serve_create_rasch_webapp(request: Request):
 
 
 @app.get("/api/test/{test_id}")
-def get_test_for_solve(test_id: int, user_id: Optional[int] = None):
-    """Berilgan test kodi bo'yicha yechish uchun xavfsiz metadata."""
+def get_test_for_solve(test_id: int, authorization: Optional[str] = Header(default=None)):
+    """Berilgan test kodi bo'yicha yechish uchun xavfsiz metadata.
+
+    Foydalanuvchi identifikatsiyasi `Authorization: tma <initData>` sarlavhasidagi
+    Telegram imzosidan olinadi (ishonchsiz `user_id` query parametri emas).
+    """
+    user_id = _verify_init_data(_extract_init_data(authorization))
+
     try:
         test = Test.get_by_id(test_id)
     except Test.DoesNotExist as exc:
