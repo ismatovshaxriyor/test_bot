@@ -7,8 +7,9 @@ import logging
 from telegram import BotCommand
 from telegram.ext import Application
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, ADMIN_ID, BACKUP_INTERVAL_HOURS
 from database import init_db
+from backup import send_backup
 
 # Handlerlarni import qilish
 from handlers import start, test_create, test_solve, test_manage, admin, inline
@@ -40,6 +41,30 @@ async def global_ortga_handler(update, context):
 async def global_cancel_handler(update, context):
     """Suhbatdan tashqarida /cancel kelganda menyuni ko'rsatadi (suhbat ichida fallback ishlaydi)"""
     await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+
+
+async def backup_scheduler(application):
+    """Belgilangan vaqt oralig'ida adminga avtomatik DB zaxirasini yuboradi.
+
+    Birinchi zaxira bir interval o'tgach yuboriladi (bot qayta ishga tushganda
+    darrov spam bo'lmasligi uchun).
+    """
+    if not ADMIN_ID or BACKUP_INTERVAL_HOURS <= 0:
+        logger.info("Avtomatik zaxira o'chirilgan (ADMIN_ID yoki interval yo'q)")
+        return
+
+    interval_seconds = BACKUP_INTERVAL_HOURS * 3600
+    logger.info("Avtomatik zaxira yoqildi: har %s soatda", BACKUP_INTERVAL_HOURS)
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await send_backup(application.bot, ADMIN_ID, title="🤖 Avtomatik zaxira nusxasi")
+            logger.info("✅ Avtomatik zaxira adminga yuborildi")
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            logger.exception("Avtomatik zaxira yuborishda xatolik")
 
 
 async def main():
@@ -115,6 +140,9 @@ async def main():
     await application.start()
     await application.updater.start_polling(drop_pending_updates=True)
 
+    # Avtomatik zaxira jadvalini fon vazifasi sifatida ishga tushirish
+    backup_task = asyncio.create_task(backup_scheduler(application))
+
     # Run until stopped
     try:
         while True:
@@ -122,6 +150,7 @@ async def main():
     except asyncio.CancelledError:
         pass
     finally:
+        backup_task.cancel()
         await application.updater.stop()
         await application.stop()
         await application.shutdown()

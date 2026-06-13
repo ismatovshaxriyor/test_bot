@@ -1,9 +1,5 @@
 """Admin handlerlari"""
 import asyncio
-import os
-import sqlite3
-import tempfile
-from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -13,7 +9,8 @@ from telegram.ext import (
 from telegram.error import TelegramError
 
 from database import User, Test, TestSubmission, Channel, AdminTestWatch
-from config import ADMIN_ID, DATABASE_PATH
+from config import ADMIN_ID
+from backup import send_backup
 
 # Conversation states
 WAITING_CHANNEL_ID = 0
@@ -506,47 +503,14 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
 
 @admin_only
 async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Database'ning zaxira nusxasini olib, adminga yuborish"""
+    """Database'ning zaxira nusxasini olib, adminga yuborish (manual tugma)"""
     query = update.callback_query
     await query.answer("💾 Zaxira tayyorlanmoqda...")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = os.path.join(tempfile.gettempdir(), f"test_bot_backup_{timestamp}.db")
-
     try:
-        # SQLite backup API — bot/API bir vaqtda yozayotgan bo'lsa ham izchil snapshot beradi
-        src = sqlite3.connect(DATABASE_PATH)
-        try:
-            dst = sqlite3.connect(backup_path)
-            try:
-                with dst:
-                    src.backup(dst)
-            finally:
-                dst.close()
-        finally:
-            src.close()
-
-        size_mb = os.path.getsize(backup_path) / (1024 * 1024)
-
-        with open(backup_path, "rb") as f:
-            await query.message.reply_document(
-                document=f,
-                filename=f"test_bot_backup_{timestamp}.db",
-                caption=(
-                    f"💾 <b>Database zaxira nusxasi</b>\n\n"
-                    f"📅 Sana: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-                    f"📦 Hajmi: {size_mb:.2f} MB"
-                ),
-                parse_mode="HTML"
-            )
+        await send_backup(context.bot, update.effective_user.id)
     except Exception as e:
         await query.message.reply_text(f"❌ Zaxira olishda xatolik: {e}")
-    finally:
-        if os.path.exists(backup_path):
-            try:
-                os.remove(backup_path)
-            except OSError:
-                pass
 
 
 @admin_only

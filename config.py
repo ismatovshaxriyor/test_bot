@@ -20,3 +20,9 @@ WEBAPP_VERSION = os.getenv("WEBAPP_VERSION", "1")
 
 # Bot username (@siz yozsangiz ham tozalanadi)
 BOT_USERNAME = os.getenv("BOT_USERNAME", "").strip().lstrip("@")
+
+# Avtomatik DB zaxirasi: necha soatda bir marta adminga yuborilsin (0 = o'chirilgan)
+try:
+    BACKUP_INTERVAL_HOURS = float(os.getenv("BACKUP_INTERVAL_HOURS", "12"))
+except ValueError:
+    BACKUP_INTERVAL_HOURS = 12
