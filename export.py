@@ -2,7 +2,9 @@
 import os
 import re
 import tempfile
+from functools import lru_cache
 from html import escape
+from pathlib import Path
 from typing import Dict
 from database import Test
 
@@ -21,6 +23,48 @@ def _clean_text(value) -> str:
 def _html_name(value) -> str:
     """Foydalanuvchi ismini HTML uchun xavfsiz qilish (escape + control tozalash)."""
     return escape(_clean_text(value))
+
+
+@lru_cache(maxsize=1)
+def _renderable_codepoints() -> frozenset:
+    """PDF shriftlari (outline) qamrab oladigan kod-nuqtalar to'plami.
+
+    NotoEmoji KIRITILMAYDI — u rangli (COLR) font, WeasyPrint uni bo'sh chiqaradi.
+    Shu to'plamdan tashqari belgilar (emoji, CJK, musiqa belgilari va h.k.) PDF'da
+    bo'sh/tofu chiqadi, shuning uchun ism tozalashda olib tashlanadi.
+    """
+    from fontTools.ttLib import TTFont
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    fonts = [
+        "NotoSans-Regular.ttf", "NotoSans-Bold.ttf", "NotoSans-Italic.ttf",
+        "NotoSansArabic-Regular.ttf", "NotoSansHebrew-Regular.ttf",
+        "NotoSansDevanagari-Regular.ttf", "NotoSansThai-Regular.ttf",
+        "NotoSansMath-Regular.ttf",
+    ]
+    cps = set()
+    for fn in fonts:
+        p = os.path.join(base, fn)
+        if os.path.exists(p):
+            try:
+                cps.update(TTFont(p, lazy=True).getBestCmap().keys())
+            except Exception:
+                pass
+    return frozenset(cps)
+
+
+def _pdf_safe_name(value) -> str:
+    """Ismni PDF'da render bo'ladigan belgilarga qisqartirish.
+
+    ASCII, bo'shliq va bundle shriftlar qamrab oladigan belgilar qoldiriladi;
+    qolganlari (emoji, CJK, musiqa belgilari, ZWJ va h.k.) olib tashlanadi.
+    Hammasi olib tashlansa — bo'sh satr qaytadi (chaqiruvchi '—' ga almashtiradi).
+    """
+    text = _clean_text(value)
+    if not text:
+        return ""
+    renderable = _renderable_codepoints()
+    kept = [ch for ch in text if ord(ch) < 0x80 or ch.isspace() or ord(ch) in renderable]
+    return re.sub(r"\s+", " ", "".join(kept)).strip()
 
 
 def get_grade(score: float) -> str:
@@ -217,8 +261,9 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     rows_html = ""
     for idx, sub in enumerate(submissions):
         num = idx + 1
-        # Ismni HTML uchun escape qilamiz: <, &, > kabi belgilar markup'ni buzmasin
-        name = _html_name(sub['user'])
+        # Ismni PDF'da render bo'ladigan belgilarga qisqartirib, HTML escape qilamiz.
+        # Render bo'lmaydigan (emoji/CJK/...) belgilar olib tashlanadi; bo'sh qolsa '—'.
+        name = escape(_pdf_safe_name(sub['user']) or '—')
 
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
@@ -259,10 +304,15 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         path = os.path.join(_fd, filename)
         if not os.path.exists(path):
             return ''
+        # CSS unicode-range diapazon oxirida U+ bo'lmasligi kerak: U+1F300-1F9FF
+        # (U+1F300-U+1F9FF — noto'g'ri, WeasyPrint butun qatorni rad etadi)
+        unicode_range = unicode_range.replace('-U+', '-')
+        # Yo'lda bo'sh joy bo'lishi mumkin ("Personal Projects") — to'g'ri file:// URI
+        font_uri = Path(path).as_uri()
         return f"""
         @font-face {{
             font-family: '{family}';
-            src: url('file://{path}') format('truetype');
+            src: url('{font_uri}') format('truetype');
             font-weight: {weight};
             font-style: {style};
             unicode-range: {unicode_range};
