@@ -334,16 +334,20 @@
             `;
         }
 
-        function setMathText(el, raw) {
-            // Matnni $...$ bo'laklarga ajratib, math qismini MathLive bilan render qiladi.
-            // Oddiy matn createTextNode orqali (XSS-xavfsiz), math esa MathLive markup'i.
+        function mathLiveReady() {
+            return !!(window.MathLive && typeof window.MathLive.convertLatexToMarkup === 'function');
+        }
+
+        function _renderMathInto(el, raw) {
+            // $...$ bo'laklarga ajratib render qiladi. Oddiy matn createTextNode (XSS-xavfsiz),
+            // math esa MathLive markup'i. MathLive tayyor bo'lmasa — oddiy matn (keyin qayta render).
             el.textContent = '';
             const str = String(raw == null ? '' : raw);
             const parts = str.split(/(\$[^$]+\$)/g);
-            const hasML = !!(window.MathLive && typeof window.MathLive.convertLatexToMarkup === 'function');
+            const ready = mathLiveReady();
             parts.forEach((part) => {
                 if (!part) return;
-                if (hasML && part.length >= 2 && part[0] === '$' && part[part.length - 1] === '$') {
+                if (ready && part.length >= 2 && part[0] === '$' && part[part.length - 1] === '$') {
                     try {
                         const span = document.createElement('span');
                         span.innerHTML = window.MathLive.convertLatexToMarkup(part.slice(1, -1));
@@ -353,6 +357,36 @@
                 }
                 el.appendChild(document.createTextNode(part));
             });
+        }
+
+        function setMathText(el, raw) {
+            _renderMathInto(el, raw);
+            if (!mathLiveReady() && String(raw || '').indexOf('$') !== -1) {
+                // MathLive (defer) hali yuklanmagan — keyin qayta render qilish uchun belgilab qo'yamiz
+                el.dataset.mathRaw = String(raw == null ? '' : raw);
+            }
+        }
+
+        function flushPendingMath() {
+            if (!mathLiveReady()) return;
+            document.querySelectorAll('[data-math-raw]').forEach((el) => {
+                const raw = el.dataset.mathRaw;
+                delete el.dataset.mathRaw;
+                _renderMathInto(el, raw);
+            });
+        }
+
+        // MathLive defer bilan yuklanadi — tayyor bo'lgach kutayotgan formulalarni render qilamiz
+        window.addEventListener('load', flushPendingMath);
+        if (!mathLiveReady()) {
+            let _mlTries = 0;
+            const _mlTimer = setInterval(() => {
+                _mlTries += 1;
+                if (mathLiveReady() || _mlTries > 50) {
+                    clearInterval(_mlTimer);
+                    flushPendingMath();
+                }
+            }, 100);
         }
 
         function renderQuestionContent(targetDiv, item) {
