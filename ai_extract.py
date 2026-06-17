@@ -71,6 +71,7 @@ class _QuestionSchema(BaseModel):
     text: str
     options: List[_OptionSchema]
     answer: str
+    answer_from_key: bool  # javob hujjatdagi aniq kalitdan olindimi
     has_image: bool
 
 
@@ -90,9 +91,11 @@ Har bir savolni TARTIB bilan ajrat. Har biri uchun:
   TARJIMA QILMA.
 - options: closed/closed6 uchun variantlar ro'yxati {label, text} ko'rinishida,
   label = kichik harf ("a","b",...). open savol uchun bo'sh ro'yxat.
-- answer: to'g'ri javob. closed/closed6 uchun bu hujjatdagi JAVOBLAR KALITIDAN
-  olingan bitta kichik harf. open uchun to'g'ri javob matni. Aniqlay olmasang,
-  bo'sh satr qoldir.
+- answer: to'g'ri javob FAQAT hujjatdagi JAVOBLAR KALITIDAN olinadi (closed/closed6
+  uchun bitta kichik harf; open uchun javob matni). Agar hujjatda shu savol uchun
+  aniq javob kaliti BO'LMASA — answer ni BO'SH qoldir.
+- answer_from_key: true — faqat javob hujjatdagi aniq javoblar kalitidan olingan
+  bo'lsa; boshqa barcha holatda (kalit yo'q, taxmin) false.
 - has_image: FAQAT savol mazmuni matn/LaTeX bilan ifodalab bo'lmaydigan rasm,
   diagramma, grafik, geometrik shakl yoki fotosuratga bog'liq bo'lsa true.
   Sof matnli yoki formulali savollar uchun false.
@@ -100,7 +103,9 @@ Har bir savolni TARTIB bilan ajrat. Har biri uchun:
 Qoidalar:
 - Matematik/kimyoviy ifodalar, formulalar, kasrlar, darajalar — LaTeX'da, $...$
   ichida ber (masalan $\\frac{x}{2}$, $H_2O$, $x^2$).
-- Savol yoki javob O'YLAB TOPMA. Faqat hujjatda borini ajrat.
+- ❗ Savolni O'ZING YECHMA va javobni TAXMIN QILMA. Javob faqat hujjatdagi
+  tayyor javoblar kalitidan olinadi. Kalit bo'lmasa answer bo'sh, answer_from_key=false.
+- Savol matnini o'ylab topma — faqat hujjatda borini ajrat.
 - Variant matnlarini asl tilida saqla.
 
 Natijani qat'iy JSON sxema bo'yicha qaytar."""
@@ -168,6 +173,13 @@ class GeminiExtractor:
             raw_questions = [q.model_dump() for q in parsed.questions]
         else:
             raw_questions = _parse_json_questions(raw_text)
+
+        # Faqat hujjatdagi aniq javoblar kalitidan olingan javoblarni saqlaymiz.
+        # Kalitdan olinmagan (yoki model yechib/taxmin qilgan) javoblarni o'chiramiz —
+        # ular keyin test egasidan so'raladi (xato javob yaratilmasligi uchun).
+        for q in raw_questions:
+            if isinstance(q, dict) and not q.get("answer_from_key"):
+                q["answer"] = ""
 
         result = normalize_extracted(raw_questions)
         result.raw_model_text = raw_text
