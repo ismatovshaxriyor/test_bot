@@ -1,6 +1,8 @@
 """Test natijalarini fayllarga eksport qilish"""
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 from functools import lru_cache
 from html import escape
@@ -238,10 +240,8 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     return filepath
 
 
-def export_to_pdf(stats: Dict, test: Test) -> str:
-    """Natijalarni PDF faylga yozish (HTML → WeasyPrint)"""
-    from weasyprint import HTML, CSS
-
+def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
+    """Natijalar jadvali HTML'ini quradi. Ism uchun name_fn(value) ishlatiladi."""
     rasch_mode = test.scoring_mode == "rasch"
     submissions = stats['submissions']
     mode_text = "Rash modeli" if rasch_mode else "Oddiy"
@@ -261,9 +261,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     rows_html = ""
     for idx, sub in enumerate(submissions):
         num = idx + 1
-        # Ismni PDF'da render bo'ladigan belgilarga qisqartirib, HTML escape qilamiz.
-        # Render bo'lmaydigan (emoji/CJK/...) belgilar olib tashlanadi; bo'sh qolsa '—'.
-        name = escape(_pdf_safe_name(sub['user']) or '—')
+        name = name_fn(sub['user'])
 
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
@@ -486,8 +484,72 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 </body>
 </html>"""
 
+    return html
+
+
+def _find_soffice() -> str:
+    """LibreOffice (soffice) binarini topish."""
+    env_path = os.getenv("SOFFICE_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    for name in ("soffice", "libreoffice"):
+        found = shutil.which(name)
+        if found:
+            return found
+    mac_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    return mac_path if os.path.exists(mac_path) else None
+
+
+def _html_to_pdf_via_libreoffice(html: str, out_path: str) -> bool:
+    """HTML'ni LibreOffice orqali PDF'ga aylantirish (rangli emoji, CJK — asl holicha).
+
+    Muvaffaqiyatli bo'lsa True qaytaradi. LibreOffice topilmasa/xato bo'lsa False.
+    """
+    soffice = _find_soffice()
+    if not soffice:
+        return False
+    with tempfile.TemporaryDirectory() as tmp:
+        in_html = os.path.join(tmp, "results.html")
+        with open(in_html, "w", encoding="utf-8") as f:
+            f.write(html)
+        # Har konversiya uchun alohida profil — bir vaqtdagi ishlovlarda lock bo'lmaydi
+        profile = os.path.join(tmp, "profile")
+        try:
+            subprocess.run(
+                [
+                    soffice, "--headless", "--norestore", "--nolockcheck",
+                    f"-env:UserInstallation=file://{profile}",
+                    "--convert-to", "pdf", "--outdir", tmp, in_html,
+                ],
+                capture_output=True, timeout=90,
+            )
+        except Exception:
+            return False
+        produced = os.path.join(tmp, "results.pdf")
+        if not os.path.exists(produced):
+            return False
+        shutil.copy(produced, out_path)
+        return True
+
+
+def export_to_pdf(stats: Dict, test: Test) -> str:
+    """Natijalarni PDF'ga eksport qilish.
+
+    Asosiy: LibreOffice (rangli emoji, CJK, matematik harflar — asl holicha).
+    Zaxira (LibreOffice yo'q): WeasyPrint — emoji/CJK render bo'lmaydi, shuning uchun
+    render bo'lmaydigan belgilar ismdan olib tashlanadi.
+    """
     filepath = os.path.join(tempfile.gettempdir(), f"test_{test.id}.pdf")
-    HTML(string=html).write_pdf(filepath)
+
+    # 1) Sodiq render — LibreOffice
+    html_full = _build_results_html(stats, test, lambda u: _html_name(u) or "—")
+    if _html_to_pdf_via_libreoffice(html_full, filepath):
+        return filepath
+
+    # 2) Zaxira — WeasyPrint (render bo'lmaydigan belgilarni olib tashlaymiz)
+    from weasyprint import HTML
+    html_safe = _build_results_html(stats, test, lambda u: escape(_pdf_safe_name(u)) or "—")
+    HTML(string=html_safe).write_pdf(filepath)
     return filepath
 
 
