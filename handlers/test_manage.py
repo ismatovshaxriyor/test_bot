@@ -341,7 +341,7 @@ async def mytests_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📭 Siz hali test yaratmagansiz.\n\n"
             "\"📝 Test yaratish\" tugmasini bosing.",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return
 
@@ -430,7 +430,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📭 Siz hali test yechmadingiz.\n\n"
             "\"✍️ Test yechish\" tugmasini bosing.",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return
 
@@ -448,7 +448,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for sub in sorted(submissions, key=lambda s: s.submitted_at, reverse=True)[:5]:
         text += f"  • <code>{sub.test.id}</code>: {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
 
-    await update.message.reply_html(text, reply_markup=main_menu_keyboard())
+    await update.message.reply_html(text, reply_markup=main_menu_keyboard(update.effective_user.id))
 
 
 @membership_required

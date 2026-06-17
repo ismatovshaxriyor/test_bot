@@ -94,7 +94,7 @@ async def file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text(
             "🔒 Bu funksiya hozircha faqat adminlar uchun.",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(update.effective_user.id),
         )
         return ConversationHandler.END
 
@@ -425,7 +425,7 @@ async def answer_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     questions = context.user_data.get("ai_questions")
     if not questions:
-        await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard())
+        await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     # So'ralgan savolni num bo'yicha topamiz (first-missing emas — aniqlik uchun)
@@ -456,7 +456,7 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     context.user_data.pop("ai_questions", None)
     await query.message.edit_text("❌ Bekor qilindi.")
-    await query.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+    await query.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
     return ConversationHandler.END
 
 
@@ -465,7 +465,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("ai_questions", None)
     await update.message.reply_text(
         "❌ Fayldan test yaratish bekor qilindi.",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(update.effective_user.id),
     )
     return ConversationHandler.END
 
@@ -494,14 +494,14 @@ async def handle_rich_test_created(update: Update, context: ContextTypes.DEFAULT
         test = Test.get_by_id(int(test_id))
     except (ValueError, Test.DoesNotExist):
         await update.message.reply_text(
-            "❌ Test topilmadi.", reply_markup=main_menu_keyboard()
+            "❌ Test topilmadi.", reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return
 
     # Faqat egasi davom ettira oladi
     if not user or test.creator.telegram_id != user.id:
         await update.message.reply_text(
-            "❌ Bu test sizga tegishli emas.", reply_markup=main_menu_keyboard()
+            "❌ Bu test sizga tegishli emas.", reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return
 
@@ -623,7 +623,7 @@ async def _finalize(context: ContextTypes.DEFAULT_TYPE, chat_id: int, test: Test
         reply_markup=test_created_keyboard(str(test.id), bot_username, test.total_questions),
     )
     await context.bot.send_message(
-        chat_id=chat_id, text="🏠 Asosiy menyu:", reply_markup=main_menu_keyboard()
+        chat_id=chat_id, text="🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(chat_id)
     )
 
 

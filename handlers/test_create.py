@@ -180,7 +180,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=test_created_keyboard(test_id, bot_username, len(answers))
     )
     
-    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
 
     return ConversationHandler.END
 
@@ -317,7 +317,7 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=test_created_keyboard(test_id, bot_username, questions_count)
         )
         
-        await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+        await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
         
         logger.info("WEBAPP CREATE: created test_id=%s user_id=%s mode=%s", test_id, user.id, scoring_mode)
         return ConversationHandler.END
@@ -336,7 +336,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bekor qilish"""
     await update.message.reply_text(
         "❌ Test yaratish bekor qilindi.",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(update.effective_user.id)
     )
     return ConversationHandler.END
 

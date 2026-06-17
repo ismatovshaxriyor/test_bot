@@ -2,16 +2,26 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from config import WEBAPP_URL, WEBAPP_VERSION
 
 
-def main_menu_keyboard():
-    """Asosiy menyu"""
+def main_menu_keyboard(user_id=None):
+    """Asosiy menyu.
+
+    `📸 Fayldan test` (AI yaratish) faqat adminlarga ko'rsatiladi — shuning uchun
+    chaqirilganda foydalanuvchi ID si uzatiladi. ID berilmasa tugma yashiriladi.
+    """
     keyboard = [
         [
             KeyboardButton("📝 Test yaratish"),
             KeyboardButton("✍️ Test yechish")
         ],
         [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
-        [KeyboardButton("📸 Fayldan test")],
     ]
+    if user_id is not None:
+        try:
+            from handlers.admin import is_admin
+            if is_admin(user_id):
+                keyboard.append([KeyboardButton("📸 Fayldan test")])
+        except Exception:
+            pass
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 

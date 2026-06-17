@@ -113,7 +113,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if not test.is_active:
         await update.message.reply_text(
             f"❌ Bu test allaqachon yakunlangan!",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return ConversationHandler.END
 
@@ -128,7 +128,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if test.creator.telegram_id == user.id:
         await update.message.reply_text(
             "❌ O'zingiz yaratgan testni yecha olmaysiz!",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return ConversationHandler.END
 
@@ -141,7 +141,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if existing:
         await update.message.reply_text(
             "⚠️ Siz bu testni allaqachon ishlagansiz!",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return ConversationHandler.END
 
@@ -206,7 +206,7 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
     if not test or not db_user:
         await update.message.reply_text(
             "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return ConversationHandler.END
 
@@ -215,7 +215,7 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
     if not test.is_active:
         await update.message.reply_text(
             "❌ Bu test yakunlangan!",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         return ConversationHandler.END
 
@@ -269,7 +269,7 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
     except IntegrityError:
         await update.message.reply_text(
             "⚠️ Siz bu testni allaqachon ishlagansiz!",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
         context.user_data.pop('current_test', None)
         context.user_data.pop('db_user', None)
@@ -279,7 +279,7 @@ async def receive_user_answers(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_html(
         "✅ <b>Javobingiz qabul qilindi.</b>\n\n"
         "📌 Natija test yakunlangach yuboriladi.",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(update.effective_user.id)
     )
 
     await _notify_result(context, test, db_user, correct_count, total, submission.percentage)
@@ -303,7 +303,7 @@ async def start_chat_solving(update: Update, context: ContextTypes.DEFAULT_TYPE)
     test = context.user_data.get("current_test")
     db_user = context.user_data.get("db_user")
     if not test or not db_user:
-        await update.message.reply_text("❌ Xatolik. Qaytadan urinib ko'ring.", reply_markup=main_menu_keyboard())
+        await update.message.reply_text("❌ Xatolik. Qaytadan urinib ko'ring.", reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     rows = list(Question.select().where(Question.test == test).order_by(Question.num))
@@ -432,7 +432,7 @@ async def chat_answer_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = context.user_data.get("cs_idx")
     answers = context.user_data.get("cs_answers")
     if qlist is None or cur is None:
-        await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard())
+        await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     q = qlist[cur]
@@ -457,13 +457,13 @@ async def _submit_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not test or not db_user or qlist is None:
         _clear_chat_solving(context)
-        await context.bot.send_message(chat_id, "❌ Sessiya tugadi.", reply_markup=main_menu_keyboard())
+        await context.bot.send_message(chat_id, "❌ Sessiya tugadi.", reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     test = Test.get_by_id(test.id)
     if not test.is_active:
         _clear_chat_solving(context)
-        await context.bot.send_message(chat_id, "❌ Bu test yakunlangan!", reply_markup=main_menu_keyboard())
+        await context.bot.send_message(chat_id, "❌ Bu test yakunlangan!", reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     submitted = json.dumps(
@@ -481,14 +481,14 @@ async def _submit_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except IntegrityError:
         _clear_chat_solving(context)
         await context.bot.send_message(chat_id, "⚠️ Siz bu testni allaqachon ishlagansiz!",
-                                       reply_markup=main_menu_keyboard())
+                                       reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     await context.bot.send_message(
         chat_id,
         "✅ <b>Javobingiz qabul qilindi.</b>\n\n📌 Natija test yakunlangach yuboriladi.",
         parse_mode="HTML",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(update.effective_user.id),
     )
     await _notify_result(context, test, db_user, correct_count, total, submission.percentage)
     _clear_chat_solving(context)
@@ -500,7 +500,7 @@ async def cancel_solve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _clear_chat_solving(context)
     await update.message.reply_text(
         "❌ Test yechish bekor qilindi.",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(update.effective_user.id)
     )
     return ConversationHandler.END
 
@@ -538,7 +538,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         answers = data.get("answers", "")
 
         if not str(test_id).isdigit():
-            await update.message.reply_text("❌ Test kodi noto'g'ri formatda!", reply_markup=main_menu_keyboard())
+            await update.message.reply_text("❌ Test kodi noto'g'ri formatda!", reply_markup=main_menu_keyboard(update.effective_user.id))
             return ConversationHandler.END
 
         if not isinstance(answers, str):
@@ -555,15 +555,15 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         try:
             test = Test.get_by_id(int(test_id))
         except Test.DoesNotExist:
-            await update.message.reply_text("❌ Kutilmagan xatolik: Test topilmadi.", reply_markup=main_menu_keyboard())
+            await update.message.reply_text("❌ Kutilmagan xatolik: Test topilmadi.", reply_markup=main_menu_keyboard(update.effective_user.id))
             return ConversationHandler.END
             
         if not test.is_active:
-            await update.message.reply_text("❌ Uzr, bu test allaqachon yakunlangan!", reply_markup=main_menu_keyboard())
+            await update.message.reply_text("❌ Uzr, bu test allaqachon yakunlangan!", reply_markup=main_menu_keyboard(update.effective_user.id))
             return ConversationHandler.END
 
         if test.creator.telegram_id == telegram_id:
-            await update.message.reply_text("❌ O'zingiz yaratgan testni yecha olmaysiz!", reply_markup=main_menu_keyboard())
+            await update.message.reply_text("❌ O'zingiz yaratgan testni yecha olmaysiz!", reply_markup=main_menu_keyboard(update.effective_user.id))
             return ConversationHandler.END
             
         existing = TestSubmission.select().where(
@@ -574,7 +574,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         if existing:
             await update.message.reply_text(
                 "⚠️ Siz bu testni allaqachon ishlagansiz!",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(update.effective_user.id)
             )
             return ConversationHandler.END
             
@@ -598,7 +598,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         except IntegrityError:
             await update.message.reply_text(
                 "⚠️ Siz bu testni allaqachon ishlagansiz!",
-                reply_markup=main_menu_keyboard()
+                reply_markup=main_menu_keyboard(update.effective_user.id)
             )
             return ConversationHandler.END
 
@@ -606,7 +606,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_html(
             "✅ <b>Javobingiz qabul qilindi.</b>\n\n"
             "📌 Natija test yakunlangach yuboriladi.",
-            reply_markup=main_menu_keyboard()
+            reply_markup=main_menu_keyboard(update.effective_user.id)
         )
 
         # Test egasiga xabar yuborish
@@ -647,7 +647,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
     except Exception as e:
         logger.exception("WEBAPP DATA: unexpected error: %s", e)
-        await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_menu_keyboard())
+        await update.message.reply_text(f"Xatolik: {e}", reply_markup=main_menu_keyboard(update.effective_user.id))
         return ConversationHandler.END
 
     # Context tozalash
