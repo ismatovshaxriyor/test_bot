@@ -334,12 +334,25 @@
             `;
         }
 
-        function renderMath(el) {
-            try {
-                if (window.MathLive && typeof window.MathLive.renderMathInElement === 'function') {
-                    window.MathLive.renderMathInElement(el);
+        function setMathText(el, raw) {
+            // Matnni $...$ bo'laklarga ajratib, math qismini MathLive bilan render qiladi.
+            // Oddiy matn createTextNode orqali (XSS-xavfsiz), math esa MathLive markup'i.
+            el.textContent = '';
+            const str = String(raw == null ? '' : raw);
+            const parts = str.split(/(\$[^$]+\$)/g);
+            const hasML = !!(window.MathLive && typeof window.MathLive.convertLatexToMarkup === 'function');
+            parts.forEach((part) => {
+                if (!part) return;
+                if (hasML && part.length >= 2 && part[0] === '$' && part[part.length - 1] === '$') {
+                    try {
+                        const span = document.createElement('span');
+                        span.innerHTML = window.MathLive.convertLatexToMarkup(part.slice(1, -1));
+                        el.appendChild(span);
+                        return;
+                    } catch (e) { /* pastdagi oddiy matnga tushadi */ }
                 }
-            } catch (e) {}
+                el.appendChild(document.createTextNode(part));
+            });
         }
 
         function renderQuestionContent(targetDiv, item) {
@@ -348,8 +361,7 @@
             if (text) {
                 const tDiv = document.createElement('div');
                 tDiv.className = 'q-text text-sm leading-snug mb-2';
-                tDiv.textContent = text;
-                renderMath(tDiv);
+                setMathText(tDiv, text);
                 targetDiv.appendChild(tDiv);
             }
             if (item && item.has_image && Number(testId) > 0) {
@@ -399,8 +411,7 @@
                     lb.innerText = opt;
                     const txt = document.createElement('span');
                     txt.className = 'text-sm flex-1';
-                    txt.textContent = optTexts[value] || '';
-                    renderMath(txt);
+                    setMathText(txt, optTexts[value] || '');
                     row.appendChild(lb);
                     row.appendChild(txt);
                     row.onclick = () => {

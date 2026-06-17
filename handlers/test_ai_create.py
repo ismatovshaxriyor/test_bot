@@ -42,11 +42,14 @@ _PREVIEW_MAX_QUESTIONS = 25         # preview'da ko'rsatiladigan maksimal savol
 
 
 def _answer_letters(q: dict) -> list:
-    """Savol uchun ruxsat etilgan javob harflari."""
+    """Savol uchun ruxsat etilgan javob harflari (turga ko'ra kanonik to'plam)."""
+    t = q.get("type")
+    if t == "closed6":
+        return ["a", "b", "c", "d", "e", "f"]
+    if t == "closed":
+        return ["a", "b", "c", "d"]
     opts = q.get("options")
-    if opts:
-        return sorted(opts.keys())
-    return ["a", "b", "c", "d", "e", "f"] if q.get("type") == "closed6" else ["a", "b", "c", "d"]
+    return sorted(opts.keys()) if opts else ["a", "b", "c", "d"]
 
 
 def _is_answer_missing(q: dict) -> bool:
@@ -303,25 +306,31 @@ async def _prompt_next_missing(context: ContextTypes.DEFAULT_TYPE, chat_id: int)
         return None
 
     q = questions[idx]
+    # Qaysi savol so'ralayotganini eslab qolamiz (ochiq javob matni shu savolga yoziladi)
+    context.user_data["answer_pending_num"] = q["num"]
     remaining = _count_missing(questions)
     head = (
         f"✏️ <b>{q['num']}-savol javobini belgilang</b>  (yana {remaining} ta)\n\n"
         f"{escape(q.get('text') or '')}"
     )
+    cancel_btn = InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")
 
     if q["type"] in ("closed", "closed6"):
         letters = _answer_letters(q)
         opts = q.get("options") or {}
         opt_lines = [f"{l.upper()}) {escape(str(opts.get(l, '')))}" for l in letters]
         text = head + "\n\n" + "\n".join(opt_lines)
-        buttons = [InlineKeyboardButton(l.upper(), callback_data=f"ansset_{l}") for l in letters]
+        # callback'da savol raqami ham bor — javob aynan shu savolga yoziladi
+        buttons = [InlineKeyboardButton(l.upper(), callback_data=f"ansset_{q['num']}_{l}") for l in letters]
         rows = [buttons[i:i + 4] for i in range(0, len(buttons), 4)]
+        rows.append([cancel_btn])
         await context.bot.send_message(chat_id, text, parse_mode="HTML",
                                        reply_markup=InlineKeyboardMarkup(rows))
     else:
         await context.bot.send_message(
             chat_id, head + "\n\n💬 To'g'ri javobni matn ko'rinishida yuboring.",
             parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[cancel_btn]]),
         )
     return idx
 
@@ -345,23 +354,35 @@ async def start_answer_entry(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ANSWER_ENTRY
 
 
+async def _advance_or_finish(update, context, questions) -> int:
+    """Keyingi javobsiz savolga o'tish yoki hammasi tugagan bo'lsa testni yaratish."""
+    chat_id = update.effective_chat.id
+    if _first_missing_index(questions) is None:
+        await _finalize_creation(context, chat_id, update.effective_user, questions)
+        return ConversationHandler.END
+    await _prompt_next_missing(context, chat_id)
+    return ANSWER_ENTRY
+
+
 async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Yopiq savol javobi tanlandi (inline harf)."""
+    """Yopiq savol javobi tanlandi (inline harf) — aynan callback'dagi savolga yoziladi."""
     query = update.callback_query
-    letter = query.data.split("_", 1)[1]
+    parts = query.data.split("_")  # ansset_<num>_<letter>
+    if len(parts) != 3 or not parts[1].isdigit():
+        await query.answer("Xato", show_alert=True)
+        return ANSWER_ENTRY
+    num = int(parts[1])
+    letter = parts[2]
 
     questions = context.user_data.get("ai_questions")
     if not questions:
         await query.answer("Sessiya tugadi", show_alert=True)
         return ConversationHandler.END
 
-    idx = _first_missing_index(questions)
-    if idx is None:
-        await query.answer()
-        await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
-        return ConversationHandler.END
-
-    q = questions[idx]
+    q = next((x for x in questions if x.get("num") == num), None)
+    if q is None:
+        await query.answer("Savol topilmadi", show_alert=True)
+        return ANSWER_ENTRY
     if q["type"] not in ("closed", "closed6"):
         await query.answer("Bu savol uchun matn yuboring", show_alert=True)
         return ANSWER_ENTRY
@@ -370,21 +391,17 @@ async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return ANSWER_ENTRY
 
     q["answer"] = letter
-    await query.answer(f"{q['num']}: {letter.upper()} ✓")
+    await query.answer(f"{num}: {letter.upper()} ✓")
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
 
-    nxt = await _prompt_next_missing(context, query.message.chat_id)
-    if nxt is None:
-        await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
-        return ConversationHandler.END
-    return ANSWER_ENTRY
+    return await _advance_or_finish(update, context, questions)
 
 
 async def answer_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ochiq savol javobi matn ko'rinishida kiritildi."""
+    """Ochiq savol javobi matn ko'rinishida kiritildi — so'ralgan savolga yoziladi."""
     text = (update.message.text or "").strip()
     if text.lower() in ("ortga", "❌ bekor qilish"):
         return await cancel_command(update, context)
@@ -394,12 +411,16 @@ async def answer_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard())
         return ConversationHandler.END
 
-    idx = _first_missing_index(questions)
-    if idx is None:
+    # So'ralgan savolni num bo'yicha topamiz (first-missing emas — aniqlik uchun)
+    num = context.user_data.get("answer_pending_num")
+    q = next((x for x in questions if x.get("num") == num), None)
+    if q is None:
+        idx = _first_missing_index(questions)
+        q = questions[idx] if idx is not None else None
+    if q is None:
         await _finalize_creation(context, update.message.chat_id, update.effective_user, questions)
         return ConversationHandler.END
 
-    q = questions[idx]
     if q["type"] in ("closed", "closed6"):
         await update.message.reply_text("Bu savol uchun yuqoridagi tugmalardan birini tanlang.")
         return ANSWER_ENTRY
@@ -408,11 +429,8 @@ async def answer_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ANSWER_ENTRY
 
     q["answer"] = text
-    nxt = await _prompt_next_missing(context, update.message.chat_id)
-    if nxt is None:
-        await _finalize_creation(context, update.message.chat_id, update.effective_user, questions)
-        return ConversationHandler.END
-    return ANSWER_ENTRY
+    context.user_data.pop("answer_pending_num", None)
+    return await _advance_or_finish(update, context, questions)
 
 
 async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -750,7 +768,7 @@ def get_handlers():
                 CallbackQueryHandler(cancel_callback, pattern=r"^aicreate_cancel$"),
             ],
             ANSWER_ENTRY: [
-                CallbackQueryHandler(answer_pick_callback, pattern=r"^ansset_[a-f]$"),
+                CallbackQueryHandler(answer_pick_callback, pattern=r"^ansset_\d+_[a-f]$"),
                 CallbackQueryHandler(cancel_callback, pattern=r"^aicreate_cancel$"),
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,

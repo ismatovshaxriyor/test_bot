@@ -205,12 +205,29 @@ def _validate_solver_access(test: Test, user_id: Optional[int]) -> None:
         )
 
 
+def _safe_json_for_script(obj) -> str:
+    """JSON'ni inline <script> ichiga xavfsiz joylash uchun.
+
+    `<`, `>`, `&` va U+2028/U+2029 ni \\uXXXX ga aylantiradi — shunda savol matni
+    ichidagi `</script>` kabi belgilar script tegini buza olmaydi (XSS oldini olish).
+    Natija to'g'ri JSON bo'lib qoladi (JSON satr ichida \\u003c == `<`).
+    """
+    return (
+        json.dumps(obj, ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
+
+
 def _solve_context_from_test(test: Test) -> dict:
     structure = _build_test_structure(test)
     return {
         "test_id": test.id,
         "total_questions": len(structure),
-        "test_structure": json.dumps(structure, ensure_ascii=False),
+        "test_structure": _safe_json_for_script(structure),
         "is_mixed": _is_mixed_test(test),
         "bot_username": RESOLVED_BOT_USERNAME,
         "error": None,
@@ -419,6 +436,10 @@ def get_question_image(test_id: int, num: int):
     To'g'ri javob emas — savol mazmunining bir qismi, shuning uchun test_id+num
     bo'yicha ochiq (savol matni/variantlari kabi).
     """
+    test = Test.get_or_none(Test.id == test_id)
+    if not test or not test.is_active:
+        raise HTTPException(status_code=404, detail="Rasm topilmadi.")
+
     q = Question.get_or_none((Question.test == test_id) & (Question.num == num))
     if not q or not q.image_file_id:
         raise HTTPException(status_code=404, detail="Rasm topilmadi.")
