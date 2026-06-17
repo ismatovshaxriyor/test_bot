@@ -316,7 +316,7 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 chat_id=ADMIN_ID,
                 text=f"📢 <b>Test yakunlandi!</b>\n\n"
                      f"📝 Test: <code>{code}</code>\n"
-                     f"👤 Yaratuvchi: {test.creator.full_name}\n"
+                     f"👤 Yaratuvchi: {escape(test.creator.full_name or '')}\n"
                      f"👥 Ishtirokchilar: {stats['total_submissions']} ta",
                 parse_mode="HTML"
             )

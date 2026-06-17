@@ -1,5 +1,6 @@
 """Test yaratish handleri"""
 import logging
+from html import escape
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -155,7 +156,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=f"📢 <b>Yangi test yaratildi!</b>\n\n"
-                     f"👤 Yaratuvchi: {db_user.full_name or db_user.username}\n"
+                     f"👤 Yaratuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"📝 Kod: <code>{test_id}</code>\n"
                      f"❓ Savollar: {len(answers)} ta\n"
                      f"📐 Baholash: {mode_text}",
@@ -292,7 +293,7 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 await context.bot.send_message(
                     chat_id=ADMIN_ID,
                     text=f"📢 <b>Yangi test yaratildi!</b>\n\n"
-                         f"👤 Yaratuvchi: {db_user.full_name or db_user.username}\n"
+                         f"👤 Yaratuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                          f"📝 Kod: <code>{test_id}</code>\n"
                          f"❓ Savollar: {questions_count} ta\n"
                          f"📐 Baholash: {mode_text}",

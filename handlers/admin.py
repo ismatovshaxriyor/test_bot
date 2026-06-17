@@ -1,5 +1,6 @@
 """Admin handlerlari"""
 import asyncio
+from html import escape
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -205,7 +206,7 @@ async def receive_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
                 await update.message.reply_html(
                     f"✅ <b>Kanal qayta faollashtirildi!</b>\n\n"
-                    f"📢 {chat.title}\n"
+                    f"📢 {escape(chat.title or '')}\n"
                     f"🆔 <code>{chat.id}</code>"
                 )
                 return ConversationHandler.END
@@ -220,7 +221,7 @@ async def receive_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await update.message.reply_html(
             f"✅ <b>Kanal qo'shildi!</b>\n\n"
-            f"📢 {chat.title}\n"
+            f"📢 {escape(chat.title or '')}\n"
             f"🆔 <code>{chat.id}</code>\n\n"
             f"Endi foydalanuvchilar bu kanalga a'zo bo'lishi kerak."
         )
@@ -262,7 +263,7 @@ async def list_channels_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     keyboard = []
     for channel in channels:
-        text += f"• {channel.title}\n"
+        text += f"• {escape(channel.title or '')}\n"
         text += f"  🆔 <code>{channel.channel_id}</code>\n\n"
 
         keyboard.append([
@@ -314,7 +315,7 @@ async def users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for user in users:
         admin_badge = "👑 " if user.is_admin else ""
-        text += f"{admin_badge}<code>{user.telegram_id}</code> - {user.full_name or 'Nomsiz'}\n"
+        text += f"{admin_badge}<code>{user.telegram_id}</code> - {escape(user.full_name or 'Nomsiz')}\n"
 
     total = User.select().count()
     text += f"\n<b>Jami:</b> {total} ta"
@@ -383,7 +384,7 @@ async def admin_active_tests_callback(update: Update, context: ContextTypes.DEFA
         watching = test.id in watching_ids
         bell = "🔔" if watching else "🔕"
         creator_name = test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
-        text += f"{bell} <code>{test.id}</code> — {test.total_questions} savol | {creator_name}\n"
+        text += f"{bell} <code>{test.id}</code> — {test.total_questions} savol | {escape(creator_name)}\n"
 
         toggle_label = "🔕 Bekor qilish" if watching else "🔔 Kuzatish"
         keyboard.append([
@@ -467,7 +468,7 @@ async def admin_end_test_callback(update: Update, context: ContextTypes.DEFAULT_
     await query.message.edit_text(
         f"🔴 <b>Testni tugatish</b>\n\n"
         f"📝 Test: <code>{test_id}</code>\n"
-        f"👤 Yaratuvchi: {creator_name}\n"
+        f"👤 Yaratuvchi: {escape(creator_name)}\n"
         f"📊 Savollar: {test.total_questions}\n\n"
         f"Testni tugatishni tasdiqlaysizmi?\n"
         f"⚠️ Tugatilgan test yangi javoblarni qabul qilmaydi!",
@@ -619,7 +620,7 @@ async def receive_admin_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_html(
             f"✅ <b>Admin qo'shildi!</b>\n\n"
-            f"👤 {user.full_name or user.username or 'Nomsiz'}\n"
+            f"👤 {escape(user.full_name or user.username or 'Nomsiz')}\n"
             f"🆔 <code>{user.telegram_id}</code>"
         )
 
@@ -671,7 +672,7 @@ async def list_admins_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         for admin in admins:
             if admin.telegram_id == ADMIN_ID:
                 continue  # Asosiy adminni o'tkazib yuborish
-            text += f"• {admin.full_name or 'Nomsiz'} - <code>{admin.telegram_id}</code>\n"
+            text += f"• {escape(admin.full_name or 'Nomsiz')} - <code>{admin.telegram_id}</code>\n"
             keyboard.append([
                 InlineKeyboardButton(
                     f"🗑 {admin.full_name or admin.telegram_id}",

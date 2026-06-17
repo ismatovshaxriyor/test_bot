@@ -39,7 +39,7 @@ async def _notify_result(context, test, db_user, correct_count, total, percentag
                 chat_id=test.creator.telegram_id,
                 text=f"📢 <b>Yangi natija!</b>\n\n"
                      f"📝 Test: <code>{test.id}</code>\n"
-                     f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                     f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"✅ Natija: {correct_count}/{total} ({percentage}%)",
                 parse_mode="HTML",
             )
@@ -56,7 +56,7 @@ async def _notify_result(context, test, db_user, correct_count, total, percentag
                 chat_id=watcher_tg_id,
                 text=f"🔔 <b>Kuzatuv: Yangi natija!</b>\n\n"
                      f"📝 Test: <code>{test.id}</code>\n"
-                     f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                     f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"✅ Natija: {correct_count}/{total} ({percentage}%)",
                 parse_mode="HTML",
             )
@@ -617,7 +617,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                     chat_id=creator.telegram_id,
                     text=f"📢 <b>Yangi natija!</b>\n\n"
                      f"📝 Test: <code>{test.id}</code>\n"
-                     f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                     f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
                     parse_mode="HTML"
                 )
@@ -635,7 +635,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                     chat_id=watcher_tg_id,
                     text=f"🔔 <b>Kuzatuv: Yangi natija!</b>\n\n"
                          f"📝 Test: <code>{test.id}</code>\n"
-                         f"👤 Foydalanuvchi: {db_user.full_name or db_user.username}\n"
+                         f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                          f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
                     parse_mode="HTML"
                 )

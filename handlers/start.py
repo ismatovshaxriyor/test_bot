@@ -1,4 +1,5 @@
 """Start va Help buyruqlari"""
+from html import escape
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
@@ -59,7 +60,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_html(
-        f"👋 Salom, <b>{user.first_name}</b>!\n\n"
+        f"👋 Salom, <b>{escape(user.first_name or '')}</b>!\n\n"
         f"🎯 Bu bot test javoblarini tekshirish uchun yaratilgan.\n\n"
         f"Quyidagi tugmalardan foydalaning:",
         reply_markup=main_menu_keyboard(update.effective_user.id)

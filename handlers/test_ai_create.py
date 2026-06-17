@@ -281,7 +281,7 @@ async def _finalize_creation(context: ContextTypes.DEFAULT_TYPE, chat_id: int, u
                 chat_id=ADMIN_ID,
                 text=(
                     f"📢 <b>Yangi test yaratildi! (AI/fayl)</b>\n\n"
-                    f"👤 Yaratuvchi: {db_user.full_name or db_user.username}\n"
+                    f"👤 Yaratuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                     f"📝 Kod: <code>{test.id}</code>\n"
                     f"❓ Savollar: {test.total_questions} ta"
                 ),
@@ -512,7 +512,7 @@ async def handle_rich_test_created(update: Update, context: ContextTypes.DEFAULT
                 chat_id=ADMIN_ID,
                 text=(
                     f"📢 <b>Yangi test yaratildi! (qo'lda)</b>\n\n"
-                    f"👤 Yaratuvchi: {test.creator.full_name or test.creator.username}\n"
+                    f"👤 Yaratuvchi: {escape(test.creator.full_name or test.creator.username or '')}\n"
                     f"📝 Kod: <code>{test.id}</code>\n"
                     f"❓ Savollar: {test.total_questions} ta"
                 ),
