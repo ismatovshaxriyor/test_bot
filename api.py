@@ -1,18 +1,25 @@
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
 import urllib.request
+from dataclasses import asdict
 from typing import Optional
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
+logger = logging.getLogger(__name__)
+
+import services
+from ai_extract import ExtractionError, normalize_extracted
 from config import BOT_TOKEN, BOT_USERNAME
-from database import Test, TestSubmission, User, init_db
+from database import Test, TestSubmission, User, get_or_create_user, init_db
 
 
 # initData imzosining maksimal yaroqlilik muddati (sekundlarda)
@@ -255,6 +262,16 @@ async def serve_create_rasch_webapp(request: Request):
     )
 
 
+@app.get("/create_rich", response_class=HTMLResponse)
+async def serve_create_rich_webapp(request: Request):
+    """Qo'lda to'liq (matn + variant + javob) test yaratish WebApp sahifasi."""
+    return templates.TemplateResponse(
+        request=request,
+        name="create_rich.html",
+        context={"bot_username": RESOLVED_BOT_USERNAME},
+    )
+
+
 @app.get("/api/test/{test_id}")
 def get_test_for_solve(test_id: int, authorization: Optional[str] = Header(default=None)):
     """Berilgan test kodi bo'yicha yechish uchun xavfsiz metadata.
@@ -280,6 +297,93 @@ def get_test_for_solve(test_id: int, authorization: Optional[str] = Header(defau
         "total_questions": len(structure),
         "test_structure": structure,
         "is_mixed": _is_mixed_test(test),
+    }
+
+
+class RichQuestionIn(BaseModel):
+    num: int
+    type: str = "closed"
+    text: str = Field(default="", max_length=4000)
+    options: Optional[dict] = None
+    answer: str = Field(default="", max_length=2000)
+    has_image: bool = False
+
+
+class RichTestCreateRequest(BaseModel):
+    scoring_mode: str = "simple"
+    # Server tomonda savollar soni cheklangan (DoS/resurs himoyasi)
+    questions: list[RichQuestionIn] = Field(..., min_length=1, max_length=200)
+
+
+def _verified_user_from_init_data(authorization: Optional[str]) -> Optional[dict]:
+    """initData ni HMAC bilan tekshirib, ishonchli user dict (id + ism) qaytaradi.
+
+    Imzo to'g'ri (yoki yo'q) bo'lsa user dict yoki None; yaroqsiz imzoda
+    `_verify_init_data` HTTPException(401) ko'taradi.
+    """
+    init_data = _extract_init_data(authorization)
+    user_id = _verify_init_data(init_data)  # imzoni tekshiradi (yaroqsizda 401)
+    if not user_id:
+        return None
+    # init_data allaqachon tasdiqlangan — ismlarni xavfsiz ajratib olamiz
+    try:
+        parsed = dict(parse_qsl(init_data, keep_blank_values=True))
+        user_obj = json.loads(parsed.get("user", "{}"))
+    except (ValueError, json.JSONDecodeError):
+        user_obj = {}
+    return {
+        "id": user_id,
+        "username": user_obj.get("username"),
+        "full_name": (
+            f"{user_obj.get('first_name', '')} {user_obj.get('last_name', '')}".strip()
+        ),
+    }
+
+
+@app.post("/api/test/create_rich")
+def create_rich_test_endpoint(
+    payload: RichTestCreateRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    """Qo'lda to'liq kiritilgan testni yaratish (WebApp → API).
+
+    Avtorizatsiya `Authorization: tma <initData>` orqali — yaratuvchi ishonchli
+    Telegram imzosidan aniqlanadi. Javoblar serverda qayta validatsiya qilinadi.
+    """
+    user = _verified_user_from_init_data(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Avtorizatsiya talab qilinadi.")
+
+    scoring_mode = payload.scoring_mode if payload.scoring_mode in {"simple", "rasch"} else "simple"
+
+    # Serverda qayta normalizatsiya/validatsiya (clientga ishonmaymiz)
+    raw = [q.model_dump() for q in payload.questions]
+    try:
+        result = normalize_extracted(raw)
+    except ExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    questions = [asdict(q) for q in result.questions]
+
+    try:
+        db_user = get_or_create_user(
+            telegram_id=user["id"],
+            username=user.get("username"),
+            full_name=user.get("full_name") or "",
+        )
+        test = services.create_rich_test(
+            db_user, questions, scoring_mode=scoring_mode, source="manual"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("create_rich_test_endpoint: DB xatolik")
+        raise HTTPException(status_code=503, detail="Vaqtincha band, qayta urining.") from exc
+
+    return {
+        "test_id": test.id,
+        "total_questions": test.total_questions,
+        "image_questions": services.image_question_nums(test),
     }
 
 

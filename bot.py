@@ -12,7 +12,7 @@ from database import init_db
 from backup import send_backup
 
 # Handlerlarni import qilish
-from handlers import start, test_create, test_solve, test_manage, admin, inline
+from handlers import start, test_create, test_solve, test_manage, admin, inline, test_ai_create
 from membership import check_membership_callback
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 from keyboards import main_menu_keyboard
@@ -108,6 +108,12 @@ async def main():
 
     # Inline query
     for handler in inline.get_handlers():
+        application.add_handler(handler)
+
+    # Fayldan AI test yaratish + rasm biriktirish
+    # Global WEB_APP_DATA / photo catch-all'lardan OLDIN qo'shiladi: suhbat ichidagi
+    # fayl/rasm handlerlari ustun bo'lsin.
+    for handler in test_ai_create.get_handlers():
         application.add_handler(handler)
 
     # Membership tekshirish callback

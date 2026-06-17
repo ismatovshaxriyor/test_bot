@@ -147,7 +147,14 @@ class GeminiExtractor:
         except Exception as exc:
             msg = str(exc)
             logger.exception("GEMINI extract xatolik: %s", msg)
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            # Avval tipik atributlar (google.genai.errors.*), keyin matnga qarab
+            code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+            is_quota = (
+                code == 429
+                or "RESOURCE_EXHAUSTED" in msg
+                or (code is None and ("429" in msg or "quota" in msg.lower()))
+            )
+            if is_quota:
                 raise ExtractionError(
                     "AI band (bepul limit tugagan bo'lishi mumkin). Biroz kutib qayta urining."
                 ) from exc
@@ -271,11 +278,16 @@ def normalize_extracted(raw_questions: list) -> ExtractionResult:
 
         if q_type in {"closed", "closed6"}:
             answer = answer.lower()
-            # 6+ variant yoki e/f javob bo'lsa — aslida closed6
-            if q_type == "closed" and (
-                answer in {"e", "f"} or (options and len(options) > 4)
-            ):
+            # Turni avvalo variantlar soniga qarab aniqlaymiz (simmetrik):
+            # 5-6 variant -> closed6, 1-4 -> closed; javob harfi ikkilamchi signal.
+            n_opts = len(options) if options else 0
+            if n_opts > 4:
                 q_type = "closed6"
+            elif n_opts > 0:
+                q_type = "closed6" if answer in {"e", "f"} else "closed"
+            else:
+                # Variant yo'q — javob harfiga qarab
+                q_type = "closed6" if answer in {"e", "f"} else q_type
 
             allowed = CLOSED6_LETTERS if q_type == "closed6" else CLOSED4_LETTERS
             if answer not in allowed:

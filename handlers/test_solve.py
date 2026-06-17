@@ -292,7 +292,16 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             # Test yaratish — alohida handler ga yo'naltirish
             from handlers.test_create import webapp_create_handler
             return await webapp_create_handler(update, context)
-        
+
+        if action == "rich_test_created":
+            # Qo'lda to'liq test API orqali yaratildi — rasm biriktirishni boshlash
+            # (fallback: foydalanuvchi AI suhbatida bo'lmasa shu yerda ushlanadi)
+            from handlers.test_ai_create import handle_rich_test_created
+            test_id = data.get("test_id")
+            if str(test_id).isdigit():
+                await handle_rich_test_created(update, context, int(test_id))
+            return ConversationHandler.END
+
         if action != "submit_test":
             return ConversationHandler.END
             

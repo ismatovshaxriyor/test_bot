@@ -10,6 +10,7 @@ def main_menu_keyboard():
             KeyboardButton("✍️ Test yechish")
         ],
         [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
+        [KeyboardButton("📸 Fayldan test")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
