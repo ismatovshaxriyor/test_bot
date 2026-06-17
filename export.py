@@ -472,7 +472,7 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
   <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Baholash: <b>{mode_text}</b></span>
 </div>
 
-<table cellpadding="9" cellspacing="0" style="border-collapse:collapse;font-size:9.5pt;">
+<table width="80%" align="center" cellpadding="9" cellspacing="0" style="border-collapse:collapse;font-size:9.5pt;width:80%;margin:0 auto;">
   <thead>
     <tr>{header_cells}</tr>
   </thead>
