@@ -30,6 +30,7 @@ def _guess_mime(path: str) -> str:
         ".jpeg": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }.get(ext, "application/octet-stream")
 
 

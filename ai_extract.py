@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol, Union, runtime_checkable
 
@@ -22,9 +26,70 @@ ALLOWED_TYPES = {"closed", "closed6", "open", "open2"}
 CLOSED4_LETTERS = {"a", "b", "c", "d"}
 CLOSED6_LETTERS = {"a", "b", "c", "d", "e", "f"}
 
+# DOCX — to'g'ridan-to'g'ri Gemini o'qiy olmaydi; avval LibreOffice bilan PDF'ga aylantiramiz
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 # Qo'llab-quvvatlanadigan fayl turlari (Gemini vision inline bytes bilan o'qiydi)
 SUPPORTED_MIME_PREFIXES = ("image/",)
-SUPPORTED_MIME_EXACT = {"application/pdf"}
+SUPPORTED_MIME_EXACT = {"application/pdf", DOCX_MIME}
+
+
+def _find_soffice() -> Optional[str]:
+    """LibreOffice (soffice) binarini topish."""
+    env_path = os.getenv("SOFFICE_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    for name in ("soffice", "libreoffice"):
+        found = shutil.which(name)
+        if found:
+            return found
+    mac_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    if os.path.exists(mac_path):
+        return mac_path
+    return None
+
+
+def convert_docx_to_pdf(docx_bytes: bytes) -> bytes:
+    """DOCX baytlarini PDF baytlariga aylantirish (LibreOffice headless orqali).
+
+    Formulalar, rasmlar va joylashuvni saqlaydi. LibreOffice topilmasa
+    ExtractionError ko'taradi.
+    """
+    soffice = _find_soffice()
+    if not soffice:
+        raise ExtractionError(
+            "DOCX'ni o'qish uchun LibreOffice topilmadi. Iltimos, faylni PDF qilib yuboring."
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        in_path = os.path.join(tmp, "input.docx")
+        with open(in_path, "wb") as f:
+            f.write(bytes(docx_bytes))
+
+        # Har konversiya uchun alohida profil — bir vaqtda bir nechta ishlasa lock bo'lmaydi
+        profile = os.path.join(tmp, "profile")
+        try:
+            result = subprocess.run(
+                [
+                    soffice, "--headless", "--norestore", "--nolockcheck",
+                    f"-env:UserInstallation=file://{profile}",
+                    "--convert-to", "pdf", "--outdir", tmp, in_path,
+                ],
+                capture_output=True, timeout=120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ExtractionError("DOCX→PDF aylantirish juda uzoq cho'zildi.") from exc
+        except Exception as exc:
+            raise ExtractionError(f"DOCX→PDF aylantirishda xatolik: {exc}") from exc
+
+        out_path = os.path.join(tmp, "input.pdf")
+        if not os.path.exists(out_path):
+            err = (result.stderr or b"").decode("utf-8", "ignore")[:200]
+            logger.error("DOCX→PDF muvaffaqiyatsiz: %s", err)
+            raise ExtractionError("DOCX'ni PDF'ga aylantirib bo'lmadi. Faylni PDF qilib yuboring.")
+
+        with open(out_path, "rb") as f:
+            return f.read()
 
 
 class ExtractionError(Exception):
@@ -124,6 +189,12 @@ class GeminiExtractor:
             )
 
     def extract(self, file_bytes: bytes, mime_type: str) -> ExtractionResult:
+        # DOCX bo'lsa avval PDF'ga aylantiramiz (Gemini docx'ni to'g'ridan o'qiy olmaydi)
+        mt = (mime_type or "").lower()
+        if mt == DOCX_MIME or mt.endswith("wordprocessingml.document"):
+            file_bytes = convert_docx_to_pdf(file_bytes)
+            mime_type = "application/pdf"
+
         # Import shu yerda — SDK o'rnatilmagan bo'lsa modul import qilinishi buzilmaydi
         try:
             from google import genai

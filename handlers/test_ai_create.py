@@ -27,7 +27,7 @@ from config import ADMIN_ID, WEBAPP_URL, WEBAPP_VERSION
 from database import get_or_create_user, Test, Question
 from keyboards import main_menu_keyboard, test_created_keyboard
 from membership import membership_required
-from ai_extract import get_default_extractor, ExtractionError
+from ai_extract import get_default_extractor, ExtractionError, DOCX_MIME
 from utils import latex_to_text
 import services
 
@@ -105,7 +105,7 @@ async def file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_html(
         "📸 <b>Fayldan test yaratish</b>\n\n"
-        "Savollar <b>va javoblar kaliti</b> bo'lgan <b>PDF yoki rasm</b> yuboring — "
+        "Savollar <b>va javoblar kaliti</b> bo'lgan <b>PDF, DOCX yoki rasm</b> yuboring — "
         "AI uni o'qib testni avtomatik tuzadi.\n\n"
         "💡 Savol ichidagi rasm/diagrammalar bo'lsa, AI ularni belgilaydi va "
         "keyin ulardan rasm so'rayman.\n\n"
@@ -127,22 +127,27 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = None
     mime = None
     if message.document:
-        mime = (message.document.mime_type or "").lower()
-        size = message.document.file_size or 0
-        if not (mime == "application/pdf" or mime.startswith("image/")):
+        doc = message.document
+        raw_mime = (doc.mime_type or "").lower()
+        fname = (doc.file_name or "").lower()
+        size = doc.file_size or 0
+        is_docx = raw_mime == DOCX_MIME or fname.endswith(".docx")
+        if not (raw_mime == "application/pdf" or raw_mime.startswith("image/") or is_docx):
             await message.reply_text(
-                "❌ Faqat PDF yoki rasm yuboring. Qaytadan urinib ko'ring yoki /cancel."
+                "❌ Faqat PDF, DOCX yoki rasm yuboring. Qaytadan urinib ko'ring yoki /cancel."
             )
             return WAITING_FILE
         if size > MAX_FILE_BYTES:
             await message.reply_text("❌ Fayl juda katta (20MB dan oshmasligi kerak).")
             return WAITING_FILE
-        file_id = message.document.file_id
+        file_id = doc.file_id
+        # docx bo'lsa extraction modulida PDF'ga aylantiriladi
+        mime = DOCX_MIME if is_docx else raw_mime
     elif message.photo:
         mime = "image/jpeg"
         file_id = message.photo[-1].file_id
     else:
-        await message.reply_text("❌ PDF yoki rasm yuboring.")
+        await message.reply_text("❌ PDF, DOCX yoki rasm yuboring.")
         return WAITING_FILE
 
     status_msg = await message.reply_text("⏳ AI tahlil qilmoqda... (bir necha soniya)")
