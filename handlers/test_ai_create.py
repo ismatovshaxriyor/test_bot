@@ -89,6 +89,15 @@ def _ai_keyboard() -> ReplyKeyboardMarkup:
 @membership_required
 async def file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """'📸 Fayldan test' — fayl kutish holatini boshlash."""
+    # Hozircha bu funksiya faqat adminlar uchun
+    from handlers.admin import is_admin
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text(
+            "🔒 Bu funksiya hozircha faqat adminlar uchun.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return ConversationHandler.END
+
     # Avvalgi tugallanmagan rasm-biriktirish holatini tozalash
     context.user_data.pop("img_test_id", None)
     context.user_data.pop("img_num", None)

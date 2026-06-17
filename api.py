@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 import services
 from ai_extract import ExtractionError, normalize_extracted
-from config import BOT_TOKEN, BOT_USERNAME
+from config import ADMIN_ID, BOT_TOKEN, BOT_USERNAME
 from database import Question, Test, TestSubmission, User, get_or_create_user, init_db
 
 
@@ -357,6 +357,14 @@ class RichTestCreateRequest(BaseModel):
     questions: list[RichQuestionIn] = Field(..., min_length=1, max_length=200)
 
 
+def _is_admin_uid(user_id: int) -> bool:
+    """Foydalanuvchi admin ekanligini tekshirish (.env ADMIN_ID yoki User.is_admin)."""
+    if user_id == ADMIN_ID:
+        return True
+    user = User.get_or_none(User.telegram_id == user_id)
+    return bool(user and user.is_admin)
+
+
 def _verified_user_from_init_data(authorization: Optional[str]) -> Optional[dict]:
     """initData ni HMAC bilan tekshirib, ishonchli user dict (id + ism) qaytaradi.
 
@@ -395,6 +403,10 @@ def create_rich_test_endpoint(
     user = _verified_user_from_init_data(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="Avtorizatsiya talab qilinadi.")
+
+    # Hozircha test yaratish faqat adminlar uchun
+    if not _is_admin_uid(user["id"]):
+        raise HTTPException(status_code=403, detail="Bu funksiya hozircha faqat adminlar uchun.")
 
     scoring_mode = payload.scoring_mode if payload.scoring_mode in {"simple", "rasch"} else "simple"
 
