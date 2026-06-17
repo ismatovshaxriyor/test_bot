@@ -28,6 +28,7 @@ from database import get_or_create_user, Test, Question
 from keyboards import main_menu_keyboard, test_created_keyboard
 from membership import membership_required
 from ai_extract import get_default_extractor, ExtractionError
+from utils import latex_to_text
 import services
 
 logger = logging.getLogger(__name__)
@@ -210,11 +211,13 @@ def _build_preview(questions: list, warnings: list) -> str:
 
     shown = questions[:_PREVIEW_MAX_QUESTIONS]
     for q in shown:
-        ans = escape(str(q.get("answer", "") or "—"))
+        ans_raw = str(q.get("answer", "") or "")
         if q["type"] in ("closed", "closed6"):
-            ans = ans.upper()
+            ans = escape(ans_raw.upper()) if ans_raw else "—"
+        else:
+            ans = escape(latex_to_text(ans_raw)) if ans_raw else "—"
         img = " 🖼" if q.get("has_image") else ""
-        text = q.get("text") or ""
+        text = latex_to_text(q.get("text") or "")
         text = text if len(text) <= 60 else text[:57] + "..."
         text = escape(text)
         lines.append(f"<b>{q['num']}.</b> [{q['type']}] → <code>{ans}</code>{img}")
@@ -311,14 +314,14 @@ async def _prompt_next_missing(context: ContextTypes.DEFAULT_TYPE, chat_id: int)
     remaining = _count_missing(questions)
     head = (
         f"✏️ <b>{q['num']}-savol javobini belgilang</b>  (yana {remaining} ta)\n\n"
-        f"{escape(q.get('text') or '')}"
+        f"{escape(latex_to_text(q.get('text') or ''))}"
     )
     cancel_btn = InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")
 
     if q["type"] in ("closed", "closed6"):
         letters = _answer_letters(q)
         opts = q.get("options") or {}
-        opt_lines = [f"{l.upper()}) {escape(str(opts.get(l, '')))}" for l in letters]
+        opt_lines = [f"{l.upper()}) {escape(latex_to_text(str(opts.get(l, ''))))}" for l in letters]
         text = head + "\n\n" + "\n".join(opt_lines)
         # callback'da savol raqami ham bor — javob aynan shu savolga yoziladi
         buttons = [InlineKeyboardButton(l.upper(), callback_data=f"ansset_{q['num']}_{l}") for l in letters]
