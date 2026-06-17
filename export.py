@@ -257,6 +257,11 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
         '-':  '#d9d9d9',
     }
 
+    # Hujayra uslublari: faqat tekislash inline (padding/border <style>'da — LibreOffice
+    # ularni e'tiborsiz qoldiradi, lekin inline berilsa ustun joylashuvini buzadi).
+    _td_c = "text-align:center;"
+    _td_l = ""
+
     # Jadval satrlari
     rows_html = ""
     for idx, sub in enumerate(submissions):
@@ -265,30 +270,33 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
 
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
-            bg = grade_colors.get(grade, '#ffffff')
-            # Sariq/yashil fonda qora matn, boshqalarda qora
-            text_color = '#222' if grade in ('A+', 'A', 'B+', 'B') else '#222'
-            row_style = f'background:{bg};'
+            row_bg = grade_colors.get(grade, '#ffffff')
             rasch_val = sub.get('rasch_normalized', sub['percentage'])
-            extra_cells = f'<td>{rasch_val}</td><td>{grade}</td>'
+            extra_cells = (
+                f'<td style="{_td_c}">{rasch_val}</td>'
+                f'<td style="{_td_c}font-weight:bold;">{grade}</td>'
+            )
         else:
-            row_style = 'background:#ffffff;' if idx % 2 == 0 else 'background:#f8f9fa;'
+            row_bg = '#ffffff' if idx % 2 == 0 else '#f5f3ff'
             extra_cells = ''
 
         rows_html += f"""
-        <tr style="{row_style}">
-            <td style="text-align:center">{num}</td>
-            <td>{name}</td>
-            <td style="text-align:center">{sub['correct']}</td>
-            <td style="text-align:center">{sub['total']}</td>
+        <tr style="background:{row_bg};">
+            <td style="{_td_c}color:#6b7280;">{num}</td>
+            <td style="{_td_l}">{name}</td>
+            <td style="{_td_c}">{sub['correct']}</td>
+            <td style="{_td_c}">{sub['total']}</td>
             {extra_cells}
         </tr>"""
 
-    # Jadval sarlavhalari
-    if rasch_mode:
-        header_cells = "<th>#</th><th>Ism</th><th>To'g'ri</th><th>Jami</th><th>Rash</th><th>Daraja</th>"
-    else:
-        header_cells = "<th>#</th><th>Ism</th><th>To'g'ri</th><th>Jami</th>"
+    # Jadval sarlavhalari — indigo fon, oq matn (inline). Kenglikni LibreOffice
+    # avtomatik hisoblaydi (qo'lda kenglik berish uning joylashuvini buzadi).
+    _th = "background:#4f46e5;color:#ffffff;font-weight:bold;text-align:center;"
+    _cols = ["#", "Ism", "To'g'ri", "Jami"] + (["Rash", "Daraja"] if rasch_mode else [])
+    header_cells = "".join(
+        f'<th style="{_th}{"text-align:left;" if c == "Ism" else ""}">{c}</th>'
+        for c in _cols
+    )
 
     # ⚠️  NotoSans-Regular ni @font-face orqali yuklamaymiz!
     # (Pango bilan glyph-remapping muammosi: '10'→'0 .' kabi)
@@ -460,19 +468,18 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
   }}
 </style>
 </head>
-<body>
+<body style="font-family:{font_family};color:#1f2937;">
 
-<div class="header">
-  <h1>Test natijasi &#8212; #{test.id}</h1>
+<h1 style="text-align:center;color:#312e81;font-size:18pt;font-weight:bold;margin:0 0 3px;">Test natijasi &#8212; #{test.id}</h1>
+<div style="height:3px;width:90px;background:#4f46e5;margin:0 auto 12px;border-radius:2px;"></div>
+
+<div style="text-align:center;margin-bottom:14px;">
+  <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Ishtirokchilar: <b>{stats['total_submissions']}</b></span>
+  <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Savollar: <b>{test.total_questions}</b></span>
+  <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Baholash: <b>{mode_text}</b></span>
 </div>
 
-<div class="meta">
-  <span>Ishtirokchilar: <b>{stats['total_submissions']}</b></span>
-  <span>Savollar: <b>{test.total_questions}</b></span>
-  <span>Baholash: <b>{mode_text}</b></span>
-</div>
-
-<table>
+<table style="border-collapse:collapse;font-size:9.5pt;">
   <thead>
     <tr>{header_cells}</tr>
   </thead>
