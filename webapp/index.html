@@ -34,6 +34,30 @@
             transform: scale(1.05);
             font-weight: 700;
         }
+        /* Variant matni bo'lgan testlar uchun vertikal javob qatorlari */
+        .option-row {
+            border: 1px solid #d1d5db;
+            background: rgba(255,255,255,0.5);
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+        [data-theme='dark'] .option-row { border-color: #4b5563; background: rgba(30,41,59,0.4); }
+        .option-row .option-letter {
+            border: 1px solid #d1d5db;
+            color: #374151;
+        }
+        [data-theme='dark'] .option-row .option-letter { border-color: #4b5563; color: #e5e7eb; }
+        .option-row.selected {
+            border-color: var(--tg-theme-button-color, #3b82f6);
+            background: rgba(59,130,246,0.10);
+        }
+        .option-row.selected .option-letter {
+            background: var(--tg-theme-button-color, #3b82f6);
+            color: var(--tg-theme-button-text-color, #fff);
+            border-color: var(--tg-theme-button-color, #3b82f6);
+        }
+        .q-text { white-space: pre-wrap; word-break: break-word; }
+        .q-image { max-width: 100%; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); }
         .glass-panel {
             background: rgba(255, 255, 255, 0.82);
             backdrop-filter: blur(10px);
@@ -310,49 +334,111 @@
             `;
         }
 
-        function renderClosedQuestion(container, idx, options) {
-            const isSixOptions = options.length === 6;
-            const qDiv = document.createElement('div');
-            qDiv.className = `flex items-center justify-between ${isSixOptions ? 'gap-1.5' : 'gap-2'} p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition`;
+        function renderMath(el) {
+            try {
+                if (window.MathLive && typeof window.MathLive.renderMathInElement === 'function') {
+                    window.MathLive.renderMathInElement(el);
+                }
+            } catch (e) {}
+        }
 
-            const numSpan = document.createElement('span');
-            numSpan.className = `font-bold ${isSixOptions ? 'w-8 text-base' : 'w-12 text-lg'}`;
-            numSpan.innerText = `${idx + 1}.`;
-            qDiv.appendChild(numSpan);
+        function renderQuestionContent(targetDiv, item) {
+            // Savol matni (LaTeX render qilinadi) + rasm (agar bor)
+            const text = item && item.text ? String(item.text) : '';
+            if (text) {
+                const tDiv = document.createElement('div');
+                tDiv.className = 'q-text text-sm leading-snug mb-2';
+                tDiv.textContent = text;
+                renderMath(tDiv);
+                targetDiv.appendChild(tDiv);
+            }
+            if (item && item.has_image && Number(testId) > 0) {
+                const num = item.num || 0;
+                const img = document.createElement('img');
+                img.src = `/api/test/${testId}/image/${num}`;
+                img.className = 'q-image mb-2';
+                img.loading = 'lazy';
+                img.alt = `${num}-savol rasmi`;
+                img.onerror = () => { img.style.display = 'none'; };
+                targetDiv.appendChild(img);
+            }
+        }
 
-            const optsDiv = document.createElement('div');
-            optsDiv.className = isSixOptions
-                ? 'flex flex-1 gap-1 justify-end items-center flex-nowrap'
-                : 'flex flex-1 gap-2 justify-end flex-wrap';
-
+        function renderClosedQuestion(container, idx, letters) {
+            const item = testStructure[idx] || {};
+            const optTexts = (item.options && typeof item.options === 'object') ? item.options : null;
+            const isSixOptions = letters.length === 6;
             const current = typeof answers[idx] === 'string' ? answers[idx] : '';
-            options.forEach((opt) => {
-                const value = opt.toLowerCase();
-                const btn = document.createElement('button');
-                const sizeClass = isSixOptions ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
-                btn.className = `option-btn ${sizeClass} rounded-lg flex items-center justify-center font-medium select-none focus:outline-none active:scale-95 shadow-sm ${current === value ? 'selected' : ''}`;
-                btn.innerText = opt;
-                btn.onclick = () => {
-                    answers[idx] = value;
-                    if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
-                        WebApp.HapticFeedback.selectionChanged();
-                    }
-                    // Faqat shu satr tugmalarini yangilaymiz — renderQuestions() chaqirmaymiz!
-                    // (aks holda aralash testlarda math-field lar qayta yaratilib, yozilgan
-                    //  ochiq javoblar va fokus yo'qolishi mumkin edi)
-                    optsDiv.querySelectorAll('.option-btn').forEach(b => {
-                        if (b.innerText.toLowerCase() === value) {
-                            b.classList.add('selected');
-                        } else {
-                            b.classList.remove('selected');
-                        }
-                    });
-                    updateMainButton();
-                };
-                optsDiv.appendChild(btn);
-            });
 
-            qDiv.appendChild(optsDiv);
+            const qDiv = document.createElement('div');
+            qDiv.className = 'p-2 rounded-lg mb-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition';
+
+            // Sarlavha: raqam + (matn/rasm)
+            const head = document.createElement('div');
+            head.className = 'flex items-start gap-2';
+            const numSpan = document.createElement('span');
+            numSpan.className = 'font-bold text-base shrink-0';
+            numSpan.innerText = `${item.num || idx + 1}.`;
+            head.appendChild(numSpan);
+            const bodyDiv = document.createElement('div');
+            bodyDiv.className = 'flex-1 min-w-0';
+            renderQuestionContent(bodyDiv, item);
+            head.appendChild(bodyDiv);
+            qDiv.appendChild(head);
+
+            if (optTexts) {
+                // Variant matni bor -> vertikal qatorlar (harf + matn)
+                const list = document.createElement('div');
+                list.className = 'space-y-1.5 mt-1';
+                letters.forEach((opt) => {
+                    const value = opt.toLowerCase();
+                    const row = document.createElement('button');
+                    row.className = `option-row w-full flex items-center gap-2 p-2 rounded-lg text-left active:scale-[0.99] ${current === value ? 'selected' : ''}`;
+                    const lb = document.createElement('span');
+                    lb.className = 'option-letter font-bold w-7 h-7 rounded-md flex items-center justify-center shrink-0 text-sm';
+                    lb.innerText = opt;
+                    const txt = document.createElement('span');
+                    txt.className = 'text-sm flex-1';
+                    txt.textContent = optTexts[value] || '';
+                    renderMath(txt);
+                    row.appendChild(lb);
+                    row.appendChild(txt);
+                    row.onclick = () => {
+                        answers[idx] = value;
+                        if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
+                            WebApp.HapticFeedback.selectionChanged();
+                        }
+                        list.querySelectorAll('.option-row').forEach(b => b.classList.toggle('selected', b === row));
+                        updateMainButton();
+                    };
+                    list.appendChild(row);
+                });
+                qDiv.appendChild(list);
+            } else {
+                // Variant matni yo'q (eski testlar) -> kompakt harf qatori
+                const optsDiv = document.createElement('div');
+                optsDiv.className = isSixOptions ? 'flex gap-1 flex-wrap mt-1 ml-7' : 'flex gap-2 flex-wrap mt-1 ml-7';
+                letters.forEach((opt) => {
+                    const value = opt.toLowerCase();
+                    const btn = document.createElement('button');
+                    const sizeClass = isSixOptions ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
+                    btn.className = `option-btn ${sizeClass} rounded-lg flex items-center justify-center font-medium select-none focus:outline-none active:scale-95 shadow-sm ${current === value ? 'selected' : ''}`;
+                    btn.innerText = opt;
+                    btn.onclick = () => {
+                        answers[idx] = value;
+                        if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
+                            WebApp.HapticFeedback.selectionChanged();
+                        }
+                        optsDiv.querySelectorAll('.option-btn').forEach(b => {
+                            b.classList.toggle('selected', b.innerText.toLowerCase() === value);
+                        });
+                        updateMainButton();
+                    };
+                    optsDiv.appendChild(btn);
+                });
+                qDiv.appendChild(optsDiv);
+            }
+
             container.appendChild(qDiv);
         }
 
@@ -385,6 +471,7 @@
         }
 
         function renderOpenSingleQuestion(container, idx) {
+            const item = testStructure[idx] || {};
             const qDiv = document.createElement('div');
             qDiv.className = 'p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition';
 
@@ -393,7 +480,7 @@
 
             const numSpan = document.createElement('span');
             numSpan.className = 'font-bold text-base';
-            numSpan.innerText = `${idx + 1}.`;
+            numSpan.innerText = `${item.num || idx + 1}.`;
             top.appendChild(numSpan);
 
             const tag = document.createElement('span');
@@ -402,6 +489,8 @@
             top.appendChild(tag);
 
             qDiv.appendChild(top);
+
+            renderQuestionContent(qDiv, item);
 
             const current = typeof answers[idx] === 'string' ? answers[idx] : '';
             const field = createOpenField(current, 'Javobni kiriting...', (nextValue) => {
@@ -414,6 +503,7 @@
         }
 
         function renderOpenPairQuestion(container, idx) {
+            const item = testStructure[idx] || {};
             const qDiv = document.createElement('div');
             qDiv.className = 'p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition';
 
@@ -422,10 +512,12 @@
 
             const numSpan = document.createElement('span');
             numSpan.className = 'font-bold text-base';
-            numSpan.innerText = `${idx + 1}.`;
+            numSpan.innerText = `${item.num || idx + 1}.`;
             top.appendChild(numSpan);
 
             qDiv.appendChild(top);
+
+            renderQuestionContent(qDiv, item);
 
             const pair = (answers[idx] && typeof answers[idx] === 'object') ? answers[idx] : { a: '', b: '' };
             answers[idx] = pair;

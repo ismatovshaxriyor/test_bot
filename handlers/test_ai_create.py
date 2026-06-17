@@ -35,9 +35,37 @@ logger = logging.getLogger(__name__)
 # Conversation states
 WAITING_FILE = 0
 PREVIEW_CONFIRM = 1
+ANSWER_ENTRY = 2
 
 MAX_FILE_BYTES = 20 * 1024 * 1024  # Telegram getFile cheki ~20MB
 _PREVIEW_MAX_QUESTIONS = 25         # preview'da ko'rsatiladigan maksimal savol
+
+
+def _answer_letters(q: dict) -> list:
+    """Savol uchun ruxsat etilgan javob harflari."""
+    opts = q.get("options")
+    if opts:
+        return sorted(opts.keys())
+    return ["a", "b", "c", "d", "e", "f"] if q.get("type") == "closed6" else ["a", "b", "c", "d"]
+
+
+def _is_answer_missing(q: dict) -> bool:
+    """Savol javobi yo'q yoki yaroqsizmi (kalitsiz hujjatdan kelganda)."""
+    ans = str(q.get("answer", "") or "").strip().lower()
+    if q.get("type") in ("closed", "closed6"):
+        return ans not in _answer_letters(q)
+    return not ans  # open
+
+
+def _first_missing_index(questions: list):
+    for i, q in enumerate(questions):
+        if _is_answer_missing(q):
+            return i
+    return None
+
+
+def _count_missing(questions: list) -> int:
+    return sum(1 for q in questions if _is_answer_missing(q))
 
 
 def _ai_keyboard() -> ReplyKeyboardMarkup:
@@ -136,10 +164,20 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    missing = _count_missing(questions)
+    if missing > 0:
+        action_row = [InlineKeyboardButton(
+            f"✏️ Javoblarni belgilash ({missing} ta)", callback_data="aicreate_answers"
+        )]
+    else:
+        action_row = [InlineKeyboardButton(
+            "✅ Tasdiqlash va yaratish", callback_data="aicreate_confirm"
+        )]
+
     await message.reply_html(
         _build_preview(questions, result.warnings),
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Tasdiqlash va yaratish", callback_data="aicreate_confirm")],
+            action_row,
             [InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")],
         ]),
     )
@@ -152,10 +190,17 @@ def _build_preview(questions: list, warnings: list) -> str:
     open_n = sum(1 for q in questions if q["type"] == "open")
     img_nums = [q["num"] for q in questions if q.get("has_image")]
 
+    missing = _count_missing(questions)
+
     lines = [
         "🔍 <b>AI ajratdi — tekshirib tasdiqlang:</b>\n",
         f"❓ Jami: <b>{total}</b> ta savol  (yopiq: {closed}, ochiq: {open_n})",
     ]
+    if missing > 0:
+        lines.append(
+            f"⚠️ <b>{missing} ta savolda javob aniqlanmadi</b> — bu hujjatda javoblar "
+            f"kaliti yo'q ko'rinadi. «Javoblarni belgilash» orqali o'zingiz kiritasiz."
+        )
     if img_nums:
         lines.append(f"🖼 Rasm kerak: {', '.join(map(str, img_nums))}-savol(lar)")
     lines.append("")
@@ -188,37 +233,28 @@ def _build_preview(questions: list, warnings: list) -> str:
 
 # ──────────────────────────── Tasdiqlash ────────────────────────────
 
-@membership_required
-async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Preview tasdiqlandi — testni yaratish."""
-    query = update.callback_query
-    await query.answer()
+async def _finalize_creation(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user, questions: list):
+    """Boy testni yaratib, adminga xabar berib, rasm biriktirishni boshlaydi.
 
-    questions = context.user_data.get("ai_questions")
-    if not questions:
-        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
-        return ConversationHandler.END
-
-    user = update.effective_user
+    confirm_callback (javoblar to'liq) va javob-kiritish yakuni — ikkalasi chaqiradi.
+    """
     db_user = get_or_create_user(
         telegram_id=user.id,
         username=user.username,
         full_name=user.full_name or user.first_name,
     )
-
     try:
         test = services.create_rich_test(
             db_user, questions, scoring_mode="simple", source="file"
         )
     except Exception as e:
         logger.exception("AI CREATE: test yaratishda xatolik")
-        await query.message.edit_text(f"❌ Test yaratishda xatolik: {e}")
+        await context.bot.send_message(chat_id, f"❌ Test yaratishda xatolik: {e}")
         context.user_data.pop("ai_questions", None)
-        return ConversationHandler.END
+        return None
 
     context.user_data.pop("ai_questions", None)
 
-    # Adminga xabar (boshqa odam yaratganda)
     if ADMIN_ID and user.id != ADMIN_ID:
         try:
             await context.bot.send_message(
@@ -234,14 +270,149 @@ async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    await query.message.edit_text(
-        f"✅ <b>Test yaratildi!</b>  Kod: <code>{test.id}</code>",
-        parse_mode="HTML",
+    await context.bot.send_message(
+        chat_id, f"✅ <b>Test yaratildi!</b>  Kod: <code>{test.id}</code>", parse_mode="HTML"
+    )
+    await start_image_collection(context, chat_id, test)
+    return test
+
+
+@membership_required
+async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Preview tasdiqlandi (javoblar to'liq) — testni yaratish."""
+    query = update.callback_query
+    await query.answer()
+
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        return ConversationHandler.END
+
+    await query.message.edit_text("⏳ Test yaratilmoqda...")
+    await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
+    return ConversationHandler.END
+
+
+# ─────────────────────── Javob-kiritish (kalitsiz hujjat) ───────────────────────
+
+async def _prompt_next_missing(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Keyingi javobsiz savolni so'rash. Hammasi to'lgan bo'lsa None qaytaradi."""
+    questions = context.user_data.get("ai_questions", [])
+    idx = _first_missing_index(questions)
+    if idx is None:
+        return None
+
+    q = questions[idx]
+    remaining = _count_missing(questions)
+    head = (
+        f"✏️ <b>{q['num']}-savol javobini belgilang</b>  (yana {remaining} ta)\n\n"
+        f"{escape(q.get('text') or '')}"
     )
 
-    # Rasm biriktirish bosqichini boshlash (global handlerlar davom ettiradi)
-    await start_image_collection(context, query.message.chat_id, test)
-    return ConversationHandler.END
+    if q["type"] in ("closed", "closed6"):
+        letters = _answer_letters(q)
+        opts = q.get("options") or {}
+        opt_lines = [f"{l.upper()}) {escape(str(opts.get(l, '')))}" for l in letters]
+        text = head + "\n\n" + "\n".join(opt_lines)
+        buttons = [InlineKeyboardButton(l.upper(), callback_data=f"ansset_{l}") for l in letters]
+        rows = [buttons[i:i + 4] for i in range(0, len(buttons), 4)]
+        await context.bot.send_message(chat_id, text, parse_mode="HTML",
+                                       reply_markup=InlineKeyboardMarkup(rows))
+    else:
+        await context.bot.send_message(
+            chat_id, head + "\n\n💬 To'g'ri javobni matn ko'rinishida yuboring.",
+            parse_mode="HTML",
+        )
+    return idx
+
+
+@membership_required
+async def start_answer_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """«Javoblarni belgilash» — javob-kiritishni boshlash."""
+    query = update.callback_query
+    await query.answer()
+
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        return ConversationHandler.END
+
+    await query.message.edit_text("✏️ Javoblarni birma-bir belgilaymiz...")
+    idx = await _prompt_next_missing(context, query.message.chat_id)
+    if idx is None:
+        await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
+        return ConversationHandler.END
+    return ANSWER_ENTRY
+
+
+async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yopiq savol javobi tanlandi (inline harf)."""
+    query = update.callback_query
+    letter = query.data.split("_", 1)[1]
+
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        await query.answer("Sessiya tugadi", show_alert=True)
+        return ConversationHandler.END
+
+    idx = _first_missing_index(questions)
+    if idx is None:
+        await query.answer()
+        await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
+        return ConversationHandler.END
+
+    q = questions[idx]
+    if q["type"] not in ("closed", "closed6"):
+        await query.answer("Bu savol uchun matn yuboring", show_alert=True)
+        return ANSWER_ENTRY
+    if letter not in _answer_letters(q):
+        await query.answer("Noto'g'ri variant", show_alert=True)
+        return ANSWER_ENTRY
+
+    q["answer"] = letter
+    await query.answer(f"{q['num']}: {letter.upper()} ✓")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    nxt = await _prompt_next_missing(context, query.message.chat_id)
+    if nxt is None:
+        await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
+        return ConversationHandler.END
+    return ANSWER_ENTRY
+
+
+async def answer_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ochiq savol javobi matn ko'rinishida kiritildi."""
+    text = (update.message.text or "").strip()
+    if text.lower() in ("ortga", "❌ bekor qilish"):
+        return await cancel_command(update, context)
+
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard())
+        return ConversationHandler.END
+
+    idx = _first_missing_index(questions)
+    if idx is None:
+        await _finalize_creation(context, update.message.chat_id, update.effective_user, questions)
+        return ConversationHandler.END
+
+    q = questions[idx]
+    if q["type"] in ("closed", "closed6"):
+        await update.message.reply_text("Bu savol uchun yuqoridagi tugmalardan birini tanlang.")
+        return ANSWER_ENTRY
+    if not text:
+        await update.message.reply_text("Javob bo'sh bo'lmasin.")
+        return ANSWER_ENTRY
+
+    q["answer"] = text
+    nxt = await _prompt_next_missing(context, update.message.chat_id)
+    if nxt is None:
+        await _finalize_creation(context, update.message.chat_id, update.effective_user, questions)
+        return ConversationHandler.END
+    return ANSWER_ENTRY
 
 
 async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -575,7 +746,16 @@ def get_handlers():
             ],
             PREVIEW_CONFIRM: [
                 CallbackQueryHandler(confirm_callback, pattern=r"^aicreate_confirm$"),
+                CallbackQueryHandler(start_answer_entry, pattern=r"^aicreate_answers$"),
                 CallbackQueryHandler(cancel_callback, pattern=r"^aicreate_cancel$"),
+            ],
+            ANSWER_ENTRY: [
+                CallbackQueryHandler(answer_pick_callback, pattern=r"^ansset_[a-f]$"),
+                CallbackQueryHandler(cancel_callback, pattern=r"^aicreate_cancel$"),
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    answer_type_handler,
+                ),
             ],
         },
         fallbacks=[

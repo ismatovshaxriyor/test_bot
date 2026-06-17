@@ -7,10 +7,10 @@ import time
 import urllib.request
 from dataclasses import asdict
 from typing import Optional
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 import services
 from ai_extract import ExtractionError, normalize_extracted
 from config import BOT_TOKEN, BOT_USERNAME
-from database import Test, TestSubmission, User, get_or_create_user, init_db
+from database import Question, Test, TestSubmission, User, get_or_create_user, init_db
 
 
 # initData imzosining maksimal yaroqlilik muddati (sekundlarda)
@@ -131,7 +131,32 @@ def _is_mixed_test(test: Test) -> bool:
 
 
 def _build_test_structure(test: Test) -> list[dict]:
-    """Test tuzilmasini xavfsiz ko'rinishda qaytarish (javobsiz)."""
+    """Test tuzilmasini xavfsiz ko'rinishda qaytarish.
+
+    Boy savollar (Question qatorlari) bo'lsa — savol matni + variantlar + rasm
+    belgisi ham qaytariladi. To'g'ri javob HECH QACHON yuborilmaydi.
+    Aks holda (eski/legacy testlar) — faqat tur (type-only) qaytariladi.
+    """
+    rich = list(Question.select().where(Question.test == test).order_by(Question.num))
+    if rich:
+        structure = []
+        for q in rich:
+            opts = None
+            if q.options:
+                try:
+                    opts = json.loads(q.options)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    opts = None
+            structure.append({
+                "num": q.num,
+                "type": q.type,
+                "text": q.text or "",
+                "options": opts,
+                "has_image": bool(q.has_image and q.image_file_id),
+            })
+        return structure
+
+    # Fallback: matn saqlanmagan eski testlar (faqat tur)
     is_mixed = _is_mixed_test(test)
     if not is_mixed:
         return [{"type": "closed"} for _ in range(test.total_questions)]
@@ -385,6 +410,45 @@ def create_rich_test_endpoint(
         "total_questions": test.total_questions,
         "image_questions": services.image_question_nums(test),
     }
+
+
+@app.get("/api/test/{test_id}/image/{num}")
+def get_question_image(test_id: int, num: int):
+    """Savolga biriktirilgan rasmni Telegram'dan olib stream qiladi.
+
+    To'g'ri javob emas — savol mazmunining bir qismi, shuning uchun test_id+num
+    bo'yicha ochiq (savol matni/variantlari kabi).
+    """
+    q = Question.get_or_none((Question.test == test_id) & (Question.num == num))
+    if not q or not q.image_file_id:
+        raise HTTPException(status_code=404, detail="Rasm topilmadi.")
+    if not BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Server sozlanmagan.")
+
+    try:
+        meta_url = (
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getFile"
+            f"?file_id={quote(q.image_file_id)}"
+        )
+        with urllib.request.urlopen(meta_url, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        if not payload.get("ok"):
+            raise ValueError("getFile ok=false")
+        file_path = payload["result"]["file_path"]
+
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        with urllib.request.urlopen(file_url, timeout=15) as resp:
+            content = resp.read()
+            ctype = resp.headers.get("Content-Type", "image/jpeg")
+    except Exception as exc:
+        logger.exception("get_question_image: rasmni olishda xatolik")
+        raise HTTPException(status_code=502, detail="Rasmni olishda xatolik.") from exc
+
+    return Response(
+        content=content,
+        media_type=ctype,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/api/ping")
