@@ -40,6 +40,9 @@ class Test(BaseModel):
     creator = ForeignKeyField(User, backref="tests")
     is_active = BooleanField(default=True)
     scoring_mode = CharField(default="simple")  # 'simple' yoki 'rasch'
+    # Test qanday yaratilgan: 'legacy' (eski/javob kaliti), 'manual' (qo'lda to'liq),
+    # 'ai'/'file' (fayldan AI orqali). Boy savol matni Question jadvalida saqlanadi.
+    source = CharField(default="legacy")
     created_at = DateTimeField(default=datetime.now)
     ended_at = DateTimeField(null=True)
 
@@ -102,6 +105,27 @@ class AdminTestWatch(BaseModel):
         primary_key = CompositeKey("admin", "test")
 
 
+class Question(BaseModel):
+    """Boy savol mazmuni (matn + variantlar + javob + rasm).
+
+    Bu jadval faqat ko'rsatish/rasm qatlami — baholash uchun manba bo'lib
+    Test.correct_answers (num/type/answer massivi) ishlatiladi. Ikkalasini
+    bitta builder (services.create_rich_test) sinxron yaratadi.
+    """
+    test = ForeignKeyField(Test, backref="questions")
+    num = IntegerField()                    # tartib raqami (1..N)
+    type = CharField()                      # closed / closed6 / open / open2
+    text = TextField(null=True)             # savol matni (LaTeX mumkin)
+    options = TextField(null=True)          # JSON: {"a": "...", "b": "..."}
+    answer = TextField()                    # to'g'ri javob (harf yoki matn/JSON)
+    image_file_id = CharField(null=True)    # Telegram rasm file_id
+    has_image = BooleanField(default=False)
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        table_name = "questions"
+
+
 def _migrate_unique_submissions():
     """Bir foydalanuvchi bir testni faqat bir marta topshira olishini kafolatlash.
 
@@ -119,11 +143,38 @@ def _migrate_unique_submissions():
     )
 
 
+def _migrate_add_test_source():
+    """Mavjud `tests` jadvaliga `source` ustunini xavfsiz qo'shish.
+
+    SQLite'da `ADD COLUMN IF NOT EXISTS` yo'q, shuning uchun avval ustun borligini
+    PRAGMA orqali tekshiramiz. create_tables eski jadvalga ustun qo'shmaydi.
+    """
+    try:
+        cols = [row[1] for row in db.execute_sql("PRAGMA table_info(tests)").fetchall()]
+        if "source" not in cols:
+            db.execute_sql("ALTER TABLE tests ADD COLUMN source VARCHAR(20) DEFAULT 'legacy'")
+    except Exception:
+        pass
+
+
+def _migrate_questions_unique_index():
+    """Bir test ichida savol raqami takrorlanmasligini kafolatlash."""
+    try:
+        db.execute_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniq_question_test_num "
+            "ON questions (test_id, num)"
+        )
+    except Exception:
+        pass
+
+
 def init_db():
     """Databaseni ishga tushirish"""
     db.connect()
-    db.create_tables([User, Test, TestSubmission, Channel, AdminTestWatch])
+    db.create_tables([User, Test, TestSubmission, Channel, AdminTestWatch, Question])
     _migrate_unique_submissions()
+    _migrate_add_test_source()
+    _migrate_questions_unique_index()
     print("✅ Database tayyor!")
 
 
