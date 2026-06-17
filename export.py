@@ -1,8 +1,26 @@
 """Test natijalarini fayllarga eksport qilish"""
 import os
+import re
 import tempfile
+from html import escape
 from typing import Dict
 from database import Test
+
+# XML/HTML da ruxsat etilmagan control belgilar (tab/newline'dan tashqari)
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _clean_text(value) -> str:
+    """Foydalanuvchi matnini tozalash: control belgilarni olib tashlash.
+
+    (openpyxl Excel'ga, weasyprint HTML'ga ruxsatsiz control belgilar tushsa buziladi.)
+    """
+    return _CONTROL_RE.sub("", str(value or ""))
+
+
+def _html_name(value) -> str:
+    """Foydalanuvchi ismini HTML uchun xavfsiz qilish (escape + control tozalash)."""
+    return escape(_clean_text(value))
 
 
 def get_grade(score: float) -> str:
@@ -93,7 +111,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
         r = row + 1 + i
 
         ws.cell(row=r, column=1, value=num).border = thin_border
-        ws.cell(row=r, column=2, value=sub['user']).border = thin_border
+        ws.cell(row=r, column=2, value=_clean_text(sub['user'])).border = thin_border
         ws.cell(row=r, column=3, value=sub['correct']).border = thin_border
         ws.cell(row=r, column=4, value=sub['total']).border = thin_border
         if rasch_mode:
@@ -199,7 +217,8 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     rows_html = ""
     for idx, sub in enumerate(submissions):
         num = idx + 1
-        name = sub['user']  # HTML brauzer render qiladi — emoji/unicode muammo yo'q!
+        # Ismni HTML uchun escape qilamiz: <, &, > kabi belgilar markup'ni buzmasin
+        name = _html_name(sub['user'])
 
         if rasch_mode:
             grade = get_grade(sub.get('rasch_normalized', sub['percentage']))
