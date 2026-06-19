@@ -120,6 +120,17 @@
                 margin-left: -6px;
             }
         }
+        /* Mobil: tap kechikishi va double-tap zoomni yo'qotish, kulrang highlightni olib tashlash */
+        button, .option-btn, .option-row, input, math-field {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Mobil: variant tugmalarida uzoq bosishda matn tanlanishi / kontekst menyu chiqmasin */
+        .option-btn, .option-row {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
     </style>
 </head>
 <body class="min-h-screen p-4 pb-24">
@@ -466,7 +477,7 @@
                 letters.forEach((opt) => {
                     const value = opt.toLowerCase();
                     const btn = document.createElement('button');
-                    const sizeClass = isSixOptions ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
+                    const sizeClass = isSixOptions ? 'w-9 h-9 text-xs' : 'w-10 h-10 text-sm';
                     btn.className = `option-btn ${sizeClass} rounded-lg flex items-center justify-center font-medium select-none focus:outline-none active:scale-95 shadow-sm ${current === value ? 'selected' : ''}`;
                     btn.innerText = opt;
                     btn.onclick = () => {
@@ -487,6 +498,17 @@
             container.appendChild(qDiv);
         }
 
+        function readFieldValue(field) {
+            // math-field qiymatini xavfsiz o'qish (upgrade bo'lmagan bo'lsa ham)
+            let val = '';
+            if (field && typeof field.getValue === 'function') {
+                try { val = field.getValue(); } catch (e) { val = field.value; }
+            } else if (field && field.value !== undefined) {
+                val = field.value;
+            }
+            return String(val || '').trim();
+        }
+
         function createOpenField(value, placeholder, onInput) {
             const field = document.createElement('math-field');
             field.className = 'open-field';
@@ -496,23 +518,39 @@
             field.value = value;
             field.setAttribute('value', value);
 
-            const handleInput = () => {
-                let val = '';
-                if (typeof field.getValue === 'function') {
-                    val = field.getValue();
-                } else if (field.value !== undefined) {
-                    val = field.value;
-                }
-                onInput(String(val || '').trim());
-            };
+            const handleInput = () => { onInput(readFieldValue(field)); };
 
-            field.addEventListener('input', handleInput);
-            field.addEventListener('change', handleInput);
-            field.addEventListener('focusout', handleInput);
-            field.addEventListener('blur', handleInput);
-            field.addEventListener('keyup', handleInput);
+            // Mobil: ba'zi matn hodisalari kech keladi — bir nechta hodisaga ulanamiz
+            ['input', 'change', 'focusout', 'blur', 'keyup'].forEach((ev) => {
+                field.addEventListener(ev, handleInput);
+            });
+
+            // Mobil: maydon fokuslanganda virtual klaviatura uni yopib qo'ymasligi uchun ko'rinishga suramiz
+            field.addEventListener('focus', () => {
+                setTimeout(() => {
+                    try { field.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+                }, 200);
+            });
 
             return field;
+        }
+
+        function flushOpenFields() {
+            // Sanash/yuborishdan oldin barcha math-field qiymatlarini to'g'ridan-to'g'ri
+            // DOM'dan o'qib answers'ga yozamiz — hodisa kech kelsa ham javob "bo'sh" qolmasin.
+            document.querySelectorAll('math-field[data-open-idx]').forEach((field) => {
+                const idx = Number(field.dataset.openIdx);
+                if (!Number.isInteger(idx) || idx < 0 || idx >= totalQuestions) return;
+                const val = readFieldValue(field);
+                const part = field.dataset.openPart;
+                if (part === 'a' || part === 'b') {
+                    const pair = (answers[idx] && typeof answers[idx] === 'object') ? answers[idx] : { a: '', b: '' };
+                    pair[part] = val;
+                    answers[idx] = pair;
+                } else {
+                    answers[idx] = val;
+                }
+            });
         }
 
         function renderOpenSingleQuestion(container, idx) {
@@ -542,6 +580,7 @@
                 answers[idx] = nextValue;
                 updateMainButton();
             });
+            field.dataset.openIdx = String(idx);
 
             qDiv.appendChild(field);
             container.appendChild(qDiv);
@@ -571,16 +610,22 @@
             grid.className = 'open2-pair';
 
             const left = document.createElement('div');
-            left.appendChild(createOpenField(pair.a || '', 'a)', (nextValue) => {
+            const fieldA = createOpenField(pair.a || '', 'a)', (nextValue) => {
                 pair.a = nextValue;
                 updateMainButton();
-            }));
+            });
+            fieldA.dataset.openIdx = String(idx);
+            fieldA.dataset.openPart = 'a';
+            left.appendChild(fieldA);
 
             const right = document.createElement('div');
-            right.appendChild(createOpenField(pair.b || '', 'b)', (nextValue) => {
+            const fieldB = createOpenField(pair.b || '', 'b)', (nextValue) => {
                 pair.b = nextValue;
                 updateMainButton();
-            }));
+            });
+            fieldB.dataset.openIdx = String(idx);
+            fieldB.dataset.openPart = 'b';
+            right.appendChild(fieldB);
 
             grid.appendChild(left);
             grid.appendChild(right);
@@ -677,6 +722,7 @@
                 return;
             }
 
+            flushOpenFields();
             const answeredCount = countAnsweredQuestions();
             if (answeredCount > 0) {
                 WebApp.MainButton.show();
@@ -780,6 +826,7 @@
                 return;
             }
 
+            flushOpenFields();
             const unanswered = getUnansweredQuestionNumbers();
             if (unanswered.length > 0) {
                 const missing = unanswered.length > 6
