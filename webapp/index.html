@@ -897,6 +897,43 @@
             });
         }
 
+        // MathLive virtual klaviaturasini yopib bo'lmaslik muammosini hal qiladi:
+        // klaviatura ochiq paytda maydon VA klaviatura TASHQARISIGA bosilsa — yopamiz.
+        function hideMathKeyboard() {
+            try {
+                const vk = window.mathVirtualKeyboard;
+                if (vk && vk.visible) vk.hide();
+            } catch (e) {}
+            const active = document.activeElement;
+            if (active && active.tagName && active.tagName.toLowerCase() === 'math-field') {
+                try { active.blur(); } catch (e) {}
+            }
+        }
+
+        function tapIsOnMathKeyboard(ev) {
+            // boundingRect — versiyaga bog'liq emas; bo'lmasa class bilan tekshiramiz
+            const vk = window.mathVirtualKeyboard;
+            if (vk && vk.boundingRect && vk.boundingRect.width > 0) {
+                const r = vk.boundingRect;
+                if (ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 &&
+                    ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4) {
+                    return true;
+                }
+            }
+            return !!(ev.target && ev.target.closest && ev.target.closest('.ML__keyboard'));
+        }
+
+        document.addEventListener('pointerdown', (ev) => {
+            // Maydon ustiga bosish — fokusni saqlaymiz (klaviatura ochiq qolsin)
+            if (ev.target && ev.target.closest && ev.target.closest('math-field')) return;
+            const vk = window.mathVirtualKeyboard;
+            if (!vk || !vk.visible) return;
+            // Klaviaturaning o'ziga (tugmalarga) bosish — yozishni buzmaymiz
+            if (tapIsOnMathKeyboard(ev)) return;
+            // Aks holda (savol/sahifa bo'sh joyiga bosildi) — klaviaturani yopamiz
+            hideMathKeyboard();
+        });
+
         answers = buildAnswersArray();
         updateHeaderCode();
         toggleLoader();
