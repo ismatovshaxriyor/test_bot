@@ -223,7 +223,7 @@
         let totalQuestions = {{ total_questions }};
         let testId = {{ test_id }};
         let isMixedTest = {{ is_mixed|tojson }};
-        const errorMessage = "{{ error }}";
+        const errorMessage = {{ error|tojson }};
         const telegramUserId = Number(
             (WebApp.initDataUnsafe && WebApp.initDataUnsafe.user && WebApp.initDataUnsafe.user.id) || 0
         );

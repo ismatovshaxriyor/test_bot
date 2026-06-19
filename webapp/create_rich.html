@@ -32,6 +32,7 @@
             padding: 8px 10px;
             background: var(--tg-theme-secondary-bg-color, #fff);
             color: var(--tg-theme-text-color, #111);
+            font-size: 16px; /* iOS Safari/Telegram fokusda avtomatik zoom qilmasligi uchun */
         }
         [data-theme='dark'] .field { border-color: #4b5563; background: #0b1727; color: #fff; }
         .field:focus { outline: none; border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139,92,246,0.15); }
@@ -52,6 +53,11 @@
         [data-theme='dark'] .letter-btn { border-color: #4b5563; color: #e5e7eb; }
         .letter-btn.correct {
             background: #22c55e; color: #fff; border-color: #22c55e; transform: scale(1.05);
+        }
+        /* Mobil: tap kechikishi/zoom yo'q, kulrang highlightni olib tashlash */
+        button, .type-btn, .letter-btn, input, textarea {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
     </style>
 </head>

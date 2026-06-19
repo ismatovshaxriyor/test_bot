@@ -114,7 +114,9 @@ def parse_simple_answers(text: str) -> Tuple[Optional[str], Optional[str]]:
         # (ya'ni "1a2b3c" → to'liq parse, "abc1d" → klassik formatga o'tamiz)
         rebuilt = re.sub(r'[\s\-\.]+', '', raw)          # bo'shliq/ajratuvchilarni olib tashlab
         covered = re.sub(r'\d+[a-d]', '', rebuilt)       # har bir token ni olib tashlash
-        leftover = re.sub(r'[^a-d\d]', '', covered)      # faqat harf va raqam qolganlarini sanash
+        # Tokenlardan keyin qolgan HAR QANDAY belgi (masalan kutilmagan 'e','x' yoki yetim raqam)
+        # bu sof raqamli format emasligini bildiradi — jim o'chirmay, klassik formatga o'tamiz.
+        leftover = covered
 
         # Agar qolgan belgi bo'lmasa → bu sof raqamli format
         if not leftover:
@@ -489,8 +491,9 @@ def _fit_rasch_jmle(
         # Farq (theta - beta) saqlanishi uchun ikkalasidan ham bir xil qiymat ayriladi.
         center = sum(betas) / num_items
         if abs(center) > 1e-12:
-            betas = [b - center for b in betas]
-            thetas = [t - center for t in thetas]
+            # Centering'dan keyin ham ±6 chegarada qolsin (raw logit ko'rsatkichi oshib ketmasin)
+            betas = [max(min(b - center, 6.0), -6.0) for b in betas]
+            thetas = [max(min(t - center, 6.0), -6.0) for t in thetas]
 
         if max_change < tol:
             converged = True

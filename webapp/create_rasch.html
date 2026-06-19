@@ -149,6 +149,11 @@
             border-color: #475569;
         }
 
+        /* Mobil: tap kechikishi/zoom yo'q, kulrang highlightni olib tashlash */
+        button, .option-btn, .counter-btn, input, math-field {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
     </style>
 </head>
 <body class="min-h-screen p-4 pb-28">
@@ -283,6 +288,17 @@
             container.appendChild(row);
         }
 
+        function readFieldValue(field) {
+            // math-field qiymatini xavfsiz o'qish (upgrade bo'lmagan bo'lsa ham)
+            let val = '';
+            if (field && typeof field.getValue === 'function') {
+                try { val = field.getValue(); } catch (e) { val = field.value; }
+            } else if (field && field.value !== undefined) {
+                val = field.value;
+            }
+            return String(val || '').trim();
+        }
+
         function createOpenField(value, placeholder, onInput) {
             const field = document.createElement('math-field');
             field.className = 'open-field';
@@ -291,24 +307,30 @@
             field.setAttribute('placeholder', placeholder);
             field.value = value;
             field.setAttribute('value', value);
-            
-            const handleInput = () => {
-                let val = '';
-                if (typeof field.getValue === 'function') {
-                    val = field.getValue();
-                } else if (field.value !== undefined) {
-                    val = field.value;
-                }
-                onInput(String(val || '').trim());
-            };
-            
-            field.addEventListener('input', handleInput);
-            field.addEventListener('change', handleInput);
-            field.addEventListener('focusout', handleInput);
-            field.addEventListener('blur', handleInput);
-            field.addEventListener('keyup', handleInput);
-            
+
+            const handleInput = () => { onInput(readFieldValue(field)); };
+            ['input', 'change', 'focusout', 'blur', 'keyup'].forEach((ev) => {
+                field.addEventListener(ev, handleInput);
+            });
+            // Mobil: fokuslanganda virtual klaviatura maydonni yopib qo'ymasligi uchun ko'rinishga suramiz
+            field.addEventListener('focus', () => {
+                setTimeout(() => {
+                    try { field.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+                }, 200);
+            });
             return field;
+        }
+
+        function flushOpenFields() {
+            // Yuborish/sanashdan oldin a/b ochiq maydonlarni to'g'ridan-to'g'ri DOM'dan o'qiymiz
+            document.querySelectorAll('math-field[data-open-idx]').forEach((field) => {
+                const idx = Number(field.dataset.openIdx);
+                const part = field.dataset.openPart;
+                if (Number.isInteger(idx) && idx >= 0 && idx < raschOpen2Answers.length &&
+                    (part === 'a' || part === 'b')) {
+                    raschOpen2Answers[idx][part] = readFieldValue(field);
+                }
+            });
         }
 
 
@@ -370,28 +392,30 @@
                 pairWrap.className = 'open2-pair';
 
                 const partA = document.createElement('div');
-                partA.appendChild(
-                    createOpenField(
-                        raschOpen2Answers[i].a,
-                        'a)',
-                        (nextValue) => {
-                            raschOpen2Answers[i].a = nextValue;
-                            updateMainButton();
-                        }
-                    )
+                const fieldA = createOpenField(
+                    raschOpen2Answers[i].a,
+                    'a)',
+                    (nextValue) => {
+                        raschOpen2Answers[i].a = nextValue;
+                        updateMainButton();
+                    }
                 );
+                fieldA.dataset.openIdx = String(i);
+                fieldA.dataset.openPart = 'a';
+                partA.appendChild(fieldA);
 
                 const partB = document.createElement('div');
-                partB.appendChild(
-                    createOpenField(
-                        raschOpen2Answers[i].b,
-                        'b)',
-                        (nextValue) => {
-                            raschOpen2Answers[i].b = nextValue;
-                            updateMainButton();
-                        }
-                    )
+                const fieldB = createOpenField(
+                    raschOpen2Answers[i].b,
+                    'b)',
+                    (nextValue) => {
+                        raschOpen2Answers[i].b = nextValue;
+                        updateMainButton();
+                    }
                 );
+                fieldB.dataset.openIdx = String(i);
+                fieldB.dataset.openPart = 'b';
+                partB.appendChild(fieldB);
 
                 pairWrap.appendChild(partA);
                 pairWrap.appendChild(partB);
@@ -412,6 +436,7 @@
         function updateMainButton() {
             const total = RASCH_TOTAL_QUESTIONS;
 
+            flushOpenFields();
             const answered = countRaschAnswered();
 
             WebApp.MainButton.show();
@@ -466,6 +491,7 @@
         }
 
         function handleMainButtonClick() {
+            flushOpenFields();
             const unanswered = [];
 
             for (let i = 0; i < RASCH_CLOSED4_COUNT; i++) {
@@ -601,6 +627,36 @@
                     }
                 }
             }
+        });
+
+        // MathLive virtual klaviaturasini tashqariga bosib yopish (mobil)
+        function hideMathKeyboard() {
+            try {
+                const vk = window.mathVirtualKeyboard;
+                if (vk && vk.visible) vk.hide();
+            } catch (e) {}
+            const active = document.activeElement;
+            if (active && active.tagName && active.tagName.toLowerCase() === 'math-field') {
+                try { active.blur(); } catch (e) {}
+            }
+        }
+        function tapIsOnMathKeyboard(ev) {
+            const vk = window.mathVirtualKeyboard;
+            if (vk && vk.boundingRect && vk.boundingRect.width > 0) {
+                const r = vk.boundingRect;
+                if (ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 &&
+                    ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4) {
+                    return true;
+                }
+            }
+            return !!(ev.target && ev.target.closest && ev.target.closest('.ML__keyboard'));
+        }
+        document.addEventListener('pointerdown', (ev) => {
+            if (ev.target && ev.target.closest && ev.target.closest('math-field')) return;
+            const vk = window.mathVirtualKeyboard;
+            if (!vk || !vk.visible) return;
+            if (tapIsOnMathKeyboard(ev)) return;
+            hideMathKeyboard();
         });
 
         renderAll();

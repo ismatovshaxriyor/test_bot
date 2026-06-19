@@ -149,6 +149,11 @@
             border-color: #475569;
         }
 
+        /* Mobil: tap kechikishi/zoom yo'q, kulrang highlightni olib tashlash */
+        button, .option-btn, .counter-btn, input, math-field {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
     </style>
 </head>
 <body class="min-h-screen p-4 pb-28">
@@ -347,6 +352,17 @@
             container.appendChild(row);
         }
 
+        function readFieldValue(field) {
+            // math-field qiymatini xavfsiz o'qish (upgrade bo'lmagan bo'lsa ham)
+            let val = '';
+            if (field && typeof field.getValue === 'function') {
+                try { val = field.getValue(); } catch (e) { val = field.value; }
+            } else if (field && field.value !== undefined) {
+                val = field.value;
+            }
+            return String(val || '').trim();
+        }
+
         function createOpenField(value, placeholder, onInput) {
             const field = document.createElement('math-field');
             field.className = 'open-field';
@@ -355,13 +371,30 @@
             field.setAttribute('placeholder', placeholder);
             field.value = value;
             field.setAttribute('value', value);
-            
-            const handleInput = () => {
-                onInput(String(field.value || '').trim());
-            };
-            field.addEventListener('input', handleInput);
-            field.addEventListener('change', handleInput);
+
+            const handleInput = () => { onInput(readFieldValue(field)); };
+            // Mobil: ba'zi matn hodisalari kech keladi — bir nechta hodisaga ulanamiz
+            ['input', 'change', 'focusout', 'blur', 'keyup'].forEach((ev) => {
+                field.addEventListener(ev, handleInput);
+            });
+            // Mobil: fokuslanganda virtual klaviatura maydonni yopib qo'ymasligi uchun ko'rinishga suramiz
+            field.addEventListener('focus', () => {
+                setTimeout(() => {
+                    try { field.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+                }, 200);
+            });
             return field;
+        }
+
+        function flushOpenFields() {
+            // Sanash/yuborishdan oldin ochiq maydonlarni to'g'ridan-to'g'ri DOM'dan o'qiymiz
+            // — hodisa kech kelsa ham javob "bo'sh" bo'lib qolmasin.
+            document.querySelectorAll('math-field[data-open-idx]').forEach((field) => {
+                const idx = Number(field.dataset.openIdx);
+                if (Number.isInteger(idx) && idx >= 0 && idx < openAnswers.length) {
+                    openAnswers[idx] = readFieldValue(field);
+                }
+            });
         }
 
         function renderSimpleClosedQuestions() {
@@ -431,6 +464,7 @@
                         updateMainButton();
                     }
                 );
+                field.dataset.openIdx = String(i);
 
                 row.appendChild(field);
                 container.appendChild(row);
@@ -443,6 +477,7 @@
         }
 
         function updateMainButton() {
+            flushOpenFields();
             const total = closedCount + openCount;
 
             if (total === 0) {
@@ -504,6 +539,7 @@
         }
 
         function handleMainButtonClick() {
+            flushOpenFields();
 
             const total = closedCount + openCount;
             if (total === 0) {
@@ -614,6 +650,36 @@
                     }
                 }
             }
+        });
+
+        // MathLive virtual klaviaturasini tashqariga bosib yopish (mobil)
+        function hideMathKeyboard() {
+            try {
+                const vk = window.mathVirtualKeyboard;
+                if (vk && vk.visible) vk.hide();
+            } catch (e) {}
+            const active = document.activeElement;
+            if (active && active.tagName && active.tagName.toLowerCase() === 'math-field') {
+                try { active.blur(); } catch (e) {}
+            }
+        }
+        function tapIsOnMathKeyboard(ev) {
+            const vk = window.mathVirtualKeyboard;
+            if (vk && vk.boundingRect && vk.boundingRect.width > 0) {
+                const r = vk.boundingRect;
+                if (ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 &&
+                    ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4) {
+                    return true;
+                }
+            }
+            return !!(ev.target && ev.target.closest && ev.target.closest('.ML__keyboard'));
+        }
+        document.addEventListener('pointerdown', (ev) => {
+            if (ev.target && ev.target.closest && ev.target.closest('math-field')) return;
+            const vk = window.mathVirtualKeyboard;
+            if (!vk || !vk.visible) return;
+            if (tapIsOnMathKeyboard(ev)) return;
+            hideMathKeyboard();
         });
 
         renderAll();

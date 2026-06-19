@@ -2,7 +2,7 @@
 from datetime import datetime
 from html import escape
 from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, filters
 
 from database import get_or_create_user, Test, TestSubmission
 from utils import (
@@ -502,6 +502,9 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
         elif fmt == 'chart':
             filepath = export_chart(stats, test)
+            if not filepath:
+                await query.message.reply_text("📭 Grafik uchun savol ma'lumoti yetarli emas.")
+                return
             with open(filepath, 'rb') as f:
                 await query.message.reply_photo(
                     photo=f,
@@ -521,10 +524,10 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_handlers():
     """Handlerlarni qaytarish"""
     return [
-        CommandHandler("stats", stats_command),
-        CommandHandler("end", end_command),
-        CommandHandler("mytests", mytests_command),
-        CommandHandler("mystats", mystats_command),
+        CommandHandler("stats", stats_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("end", end_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("mytests", mytests_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("mystats", mystats_command, filters=filters.ChatType.PRIVATE),
         # Callback handlers
         CallbackQueryHandler(stats_callback, pattern=r"^stats_"),
         CallbackQueryHandler(end_callback, pattern=r"^end_(?!confirm)"),

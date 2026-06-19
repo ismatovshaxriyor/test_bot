@@ -288,15 +288,14 @@ async def delete_channel_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
-    channel_id = int(query.data.replace("del_channel_", ""))
-
     try:
+        channel_id = int(query.data.replace("del_channel_", ""))
         channel = Channel.get_by_id(channel_id)
         channel.is_active = False
         channel.save()
 
         await query.answer(f"✅ {channel.title} o'chirildi!", show_alert=True)
-    except Channel.DoesNotExist:
+    except (ValueError, Channel.DoesNotExist):
         await query.answer("❌ Kanal topilmadi!", show_alert=True)
 
     # Ro'yxatni yangilash
@@ -413,7 +412,11 @@ async def admin_watch_toggle_callback(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     admin_user_id = update.effective_user.id
 
-    test_id = int(query.data.replace("watch_test_", ""))
+    try:
+        test_id = int(query.data.replace("watch_test_", ""))
+    except ValueError:
+        await query.answer("❌ Noto'g'ri ma'lumot.", show_alert=True)
+        return
 
     try:
         admin_db = User.get(User.telegram_id == admin_user_id)
@@ -700,9 +703,8 @@ async def delete_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer("❌ Faqat asosiy admin o'chira oladi!", show_alert=True)
         return
 
-    admin_db_id = int(query.data.replace("del_admin_", ""))
-
     try:
+        admin_db_id = int(query.data.replace("del_admin_", ""))
         admin = User.get_by_id(admin_db_id)
         admin.is_admin = False
         admin.save()
@@ -718,7 +720,7 @@ async def delete_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
 
-    except User.DoesNotExist:
+    except (ValueError, User.DoesNotExist):
         await query.answer("❌ Admin topilmadi!", show_alert=True)
 
     # Ro'yxatni yangilash

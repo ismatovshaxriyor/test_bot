@@ -303,13 +303,21 @@ async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    questions = context.user_data.get("ai_questions")
+    # Re-entrancy himoyasi: tugma ikki marta tez bosilsa dublikat test yaratilmasin.
+    # Savollarni darrov olib (pop) qo'yamiz — ikkinchi bosish bo'sh topadi va to'xtaydi.
+    questions = context.user_data.pop("ai_questions", None)
     if not questions:
-        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        try:
+            await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        except Exception:
+            pass
         return ConversationHandler.END
 
-    await query.message.edit_text("⏳ Test yaratilmoqda...")
-    await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
+    try:
+        await query.message.edit_text("⏳ Test yaratilmoqda...")
+    except Exception:
+        pass
+    await _finalize_creation(context, update.effective_chat.id, update.effective_user, questions)
     return ConversationHandler.END
 
 
@@ -455,8 +463,14 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data.pop("ai_questions", None)
-    await query.message.edit_text("❌ Bekor qilindi.")
-    await query.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
+    try:
+        await query.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        pass
+    await context.bot.send_message(
+        update.effective_chat.id, "🏠 Asosiy menyu:",
+        reply_markup=main_menu_keyboard(update.effective_user.id),
+    )
     return ConversationHandler.END
 
 
