@@ -26,3 +26,9 @@ try:
     BACKUP_INTERVAL_HOURS = float(os.getenv("BACKUP_INTERVAL_HOURS", "12"))
 except ValueError:
     BACKUP_INTERVAL_HOURS = 12
+
+# AI (fayldan test ajratish) — Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+# Bepul, vision'li Flash modeli. Kerak bo'lsa .env orqali boshqasiga almashtiriladi.
+# Eslatma: ba'zi kalitlarda 2.0 modellarda bepul tier yopiq (limit:0); 2.5 ochiq.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()

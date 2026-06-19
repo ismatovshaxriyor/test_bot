@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qo'lda to'liq test yaratish</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: var(--tg-theme-bg-color, #f3f4f6);
+            color: var(--tg-theme-text-color, #1f2937);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(255,255,255,0.3);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        }
+        [data-theme='dark'] .glass-panel { background: rgba(31,41,55,0.9); }
+        .q-card {
+            border: 1px solid rgba(148,163,184,0.4);
+            background: rgba(255,255,255,0.55);
+            border-radius: 16px;
+            padding: 14px;
+        }
+        [data-theme='dark'] .q-card { border-color: rgba(100,116,139,0.45); background: rgba(30,41,59,0.45); }
+        .field {
+            width: 100%;
+            border: 1.5px solid #d1d5db;
+            border-radius: 10px;
+            padding: 8px 10px;
+            background: var(--tg-theme-secondary-bg-color, #fff);
+            color: var(--tg-theme-text-color, #111);
+        }
+        [data-theme='dark'] .field { border-color: #4b5563; background: #0b1727; color: #fff; }
+        .field:focus { outline: none; border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139,92,246,0.15); }
+        .type-btn {
+            border: 1px solid #d1d5db; border-radius: 9px; padding: 5px 9px;
+            font-size: 12px; font-weight: 600; cursor: pointer; user-select: none;
+        }
+        [data-theme='dark'] .type-btn { border-color: #4b5563; }
+        .type-btn.active {
+            background: var(--tg-theme-button-color, #3b82f6);
+            color: var(--tg-theme-button-text-color, #fff);
+            border-color: var(--tg-theme-button-color, #3b82f6);
+        }
+        .letter-btn {
+            width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+            border: 1px solid #d1d5db; font-weight: 700; cursor: pointer; user-select: none;
+        }
+        [data-theme='dark'] .letter-btn { border-color: #4b5563; color: #e5e7eb; }
+        .letter-btn.correct {
+            background: #22c55e; color: #fff; border-color: #22c55e; transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 pb-28">
+    <div class="glass-panel max-w-md mx-auto p-5 rounded-3xl mt-2">
+        <h1 class="text-2xl font-extrabold text-center mb-1 tracking-tight">✍️ To'liq test</h1>
+        <p class="text-center text-xs opacity-70 mb-4">Savol matni, variantlar va to'g'ri javobni kiriting</p>
+
+        <div id="questions" class="space-y-4"></div>
+
+        <button id="add-btn" class="w-full mt-4 py-3 rounded-xl font-bold border-2 border-dashed border-violet-400 text-violet-600 dark:text-violet-300 active:scale-95 transition">
+            ➕ Savol qo'shish
+        </button>
+    </div>
+
+    <script>
+        const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+        const IS_TELEGRAM_WEBAPP = Boolean(tgApp && typeof tgApp.sendData === 'function');
+        const WebApp = tgApp || {
+            expand() {}, ready() {}, close() {}, sendData() {},
+            onEvent() {}, offEvent() {},
+            showAlert(m) { alert(m); },
+            themeParams: {}, initData: '', initDataUnsafe: {},
+            colorScheme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+            HapticFeedback: { selectionChanged() {}, notificationOccurred() {} },
+            MainButton: { text: '', color: '#8b5cf6', show() {}, hide() {}, showProgress() {}, hideProgress() {}, onClick() {} }
+        };
+        WebApp.expand();
+        WebApp.ready();
+        if (WebApp.colorScheme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.classList.add('dark');
+        }
+
+        const LETTERS = ['a', 'b', 'c', 'd', 'e', 'f'];
+        const MAX_QUESTIONS = 200;
+
+        function newQuestion() {
+            return { type: 'closed', text: '', options: ['', '', '', ''], answer: '', has_image: false };
+        }
+
+        let questions = [newQuestion()];
+
+        function selHaptic() {
+            try { WebApp.HapticFeedback.selectionChanged(); } catch (e) {}
+        }
+        function notify(t) {
+            try { WebApp.HapticFeedback.notificationOccurred(t); } catch (e) {}
+        }
+
+        function optionCount(type) {
+            if (type === 'closed6') return 6;
+            if (type === 'open') return 0;
+            return 4;
+        }
+
+        function setType(i, type) {
+            const q = questions[i];
+            q.type = type;
+            const n = optionCount(type);
+            // variantlar massivini moslash
+            const next = q.options.slice(0, n);
+            while (next.length < n) next.push('');
+            q.options = next;
+            // tanlangan javob endi mavjud bo'lmasa tozalash
+            if (type === 'open') {
+                q.answer = '';
+            } else {
+                const idx = LETTERS.indexOf(q.answer);
+                if (idx < 0 || idx >= n) q.answer = '';
+            }
+            selHaptic();
+            render();
+        }
+
+        function addQuestion() {
+            if (questions.length >= MAX_QUESTIONS) {
+                WebApp.showAlert(`Savollar soni ${MAX_QUESTIONS} tadan oshmasligi kerak.`);
+                return;
+            }
+            questions.push(newQuestion());
+            selHaptic();
+            render();
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        function removeQuestion(i) {
+            if (questions.length <= 1) {
+                WebApp.showAlert('Kamida 1 ta savol bo\'lishi kerak.');
+                return;
+            }
+            questions.splice(i, 1);
+            selHaptic();
+            render();
+        }
+
+        function render() {
+            const container = document.getElementById('questions');
+            container.innerHTML = '';
+
+            questions.forEach((q, i) => {
+                const card = document.createElement('div');
+                card.className = 'q-card';
+
+                // Header
+                const head = document.createElement('div');
+                head.className = 'flex items-center justify-between mb-2';
+                head.innerHTML = `<span class="font-bold text-sm">Savol ${i + 1}</span>`;
+                const del = document.createElement('button');
+                del.className = 'text-red-500 text-sm font-semibold';
+                del.textContent = '🗑';
+                del.onclick = () => removeQuestion(i);
+                head.appendChild(del);
+                card.appendChild(head);
+
+                // Type selector
+                const types = document.createElement('div');
+                types.className = 'flex gap-2 mb-3';
+                [['closed', 'Yopiq A-D'], ['closed6', 'Yopiq A-F'], ['open', 'Ochiq']].forEach(([val, label]) => {
+                    const b = document.createElement('div');
+                    b.className = 'type-btn' + (q.type === val ? ' active' : '');
+                    b.textContent = label;
+                    b.onclick = () => setType(i, val);
+                    types.appendChild(b);
+                });
+                card.appendChild(types);
+
+                // Question text
+                const ta = document.createElement('textarea');
+                ta.className = 'field mb-2';
+                ta.rows = 2;
+                ta.placeholder = 'Savol matni (formula bo\'lsa $...$ ko\'rinishida)';
+                ta.value = q.text;
+                ta.oninput = (e) => { q.text = e.target.value; updateMainButton(); };
+                card.appendChild(ta);
+
+                // has_image
+                const imgWrap = document.createElement('label');
+                imgWrap.className = 'flex items-center gap-2 text-sm mb-3 cursor-pointer';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = q.has_image;
+                cb.onchange = (e) => { q.has_image = e.target.checked; };
+                imgWrap.appendChild(cb);
+                imgWrap.appendChild(document.createTextNode('🖼 Bu savolda rasm bor (keyin botda yuklaysiz)'));
+                card.appendChild(imgWrap);
+
+                if (q.type === 'open') {
+                    const inp = document.createElement('input');
+                    inp.className = 'field';
+                    inp.placeholder = 'To\'g\'ri javob';
+                    inp.value = q.answer;
+                    inp.oninput = (e) => { q.answer = e.target.value; updateMainButton(); };
+                    card.appendChild(inp);
+                } else {
+                    const n = optionCount(q.type);
+                    const hint = document.createElement('p');
+                    hint.className = 'text-xs opacity-60 mb-1';
+                    hint.textContent = 'To\'g\'ri javob harfini bosing:';
+                    card.appendChild(hint);
+
+                    for (let k = 0; k < n; k++) {
+                        const letter = LETTERS[k];
+                        const row = document.createElement('div');
+                        row.className = 'flex items-center gap-2 mb-1.5';
+
+                        const lb = document.createElement('button');
+                        lb.className = 'letter-btn' + (q.answer === letter ? ' correct' : '');
+                        lb.textContent = letter.toUpperCase();
+                        lb.onclick = () => { q.answer = letter; selHaptic(); render(); updateMainButton(); };
+                        row.appendChild(lb);
+
+                        const inp = document.createElement('input');
+                        inp.className = 'field';
+                        inp.placeholder = `${letter.toUpperCase()} variant matni`;
+                        inp.value = q.options[k] || '';
+                        inp.oninput = (e) => { q.options[k] = e.target.value; updateMainButton(); };
+                        row.appendChild(inp);
+
+                        card.appendChild(row);
+                    }
+                }
+
+                container.appendChild(card);
+            });
+
+            updateMainButton();
+        }
+
+        function validate() {
+            const errors = [];
+            questions.forEach((q, i) => {
+                const n = i + 1;
+                if (!q.text.trim()) errors.push(`${n}-savol matni bo'sh`);
+                if (q.type === 'open') {
+                    if (!q.answer.trim()) errors.push(`${n}-savol javobi bo'sh`);
+                } else {
+                    const cnt = optionCount(q.type);
+                    for (let k = 0; k < cnt; k++) {
+                        if (!(q.options[k] || '').trim()) { errors.push(`${n}-savol ${LETTERS[k].toUpperCase()} varianti bo'sh`); break; }
+                    }
+                    if (!q.answer) errors.push(`${n}-savol to'g'ri javobi belgilanmagan`);
+                }
+            });
+            return errors;
+        }
+
+        function updateMainButton() {
+            const total = questions.length;
+            WebApp.MainButton.show();
+            const errs = validate();
+            if (errs.length === 0) {
+                WebApp.MainButton.text = `TEST YARATISH ✅ (${total} savol)`;
+                WebApp.MainButton.color = '#22c55e';
+            } else {
+                WebApp.MainButton.text = `${total} savol — to'ldiring`;
+                WebApp.MainButton.color = WebApp.themeParams.button_color || '#8b5cf6';
+            }
+        }
+
+        function buildPayload() {
+            return questions.map((q, i) => {
+                const base = { num: i + 1, type: q.type, text: q.text.trim(), has_image: !!q.has_image };
+                if (q.type === 'open') {
+                    base.answer = q.answer.trim();
+                    base.options = null;
+                } else {
+                    const cnt = optionCount(q.type);
+                    const opts = {};
+                    for (let k = 0; k < cnt; k++) opts[LETTERS[k]] = (q.options[k] || '').trim();
+                    base.options = opts;
+                    base.answer = q.answer;
+                }
+                return base;
+            });
+        }
+
+        async function submit() {
+            if (!IS_TELEGRAM_WEBAPP) {
+                WebApp.showAlert('Iltimos, sahifani Telegram bot ichidan oching.');
+                return;
+            }
+            const errs = validate();
+            if (errs.length > 0) {
+                const msg = errs.slice(0, 6).join('\n') + (errs.length > 6 ? `\n... va yana ${errs.length - 6} ta` : '');
+                WebApp.showAlert(msg);
+                notify('warning');
+                return;
+            }
+
+            WebApp.MainButton.showProgress();
+            try {
+                const initData = WebApp.initData || '';
+                const headers = { 'Content-Type': 'application/json' };
+                if (initData) headers['Authorization'] = `tma ${initData}`;
+
+                const resp = await fetch('/api/test/create_rich', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ scoring_mode: 'simple', questions: buildPayload() }),
+                });
+
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    WebApp.MainButton.hideProgress();
+                    WebApp.showAlert(data.detail || 'Server xatosi. Qayta urinib ko\'ring.');
+                    notify('error');
+                    return;
+                }
+
+                notify('success');
+                // Botga kichik signal — rasm biriktirish bosqichini boshlash uchun
+                WebApp.sendData(JSON.stringify({ action: 'rich_test_created', test_id: data.test_id }));
+                setTimeout(() => { try { WebApp.close(); } catch (e) {} }, 450);
+            } catch (e) {
+                WebApp.MainButton.hideProgress();
+                WebApp.showAlert('Tarmoq xatosi. Internetni tekshiring va qayta urining.');
+                notify('error');
+            }
+        }
+
+        document.getElementById('add-btn').onclick = addQuestion;
+
+        if (typeof WebApp.onEvent === 'function') {
+            WebApp.onEvent('mainButtonClicked', submit);
+        } else if (WebApp.MainButton && typeof WebApp.MainButton.onClick === 'function') {
+            WebApp.MainButton.onClick(submit);
+        }
+
+        render();
+    </script>
+</body>
+</html>

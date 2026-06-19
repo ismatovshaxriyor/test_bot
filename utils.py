@@ -8,6 +8,80 @@ from typing import Optional, Tuple, List, Dict
 from database import Test, TestSubmission
 
 
+_SUP_FROM = "0123456789+-=()n"
+_SUP_TO = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿ"
+_SUB_FROM = "0123456789+-=()"
+_SUB_TO = "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎"
+_SUPERSCRIPT = str.maketrans(_SUP_FROM, _SUP_TO)
+_SUBSCRIPT = str.maketrans(_SUB_FROM, _SUB_TO)
+
+_LATEX_SYMBOLS = {
+    r"\times": "×", r"\cdot": "·", r"\div": "÷", r"\pm": "±", r"\mp": "∓",
+    r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\approx": "≈", r"\equiv": "≡",
+    r"\le": "≤", r"\ge": "≥", r"\ne": "≠", r"\infty": "∞", r"\sqrt": "√",
+    r"\sum": "∑", r"\int": "∫", r"\to": "→", r"\Rightarrow": "⇒", r"\angle": "∠",
+    r"\degree": "°", r"\circ": "°", r"\pi": "π", r"\theta": "θ", r"\alpha": "α",
+    r"\beta": "β", r"\gamma": "γ", r"\Delta": "Δ", r"\delta": "δ", r"\lambda": "λ",
+    r"\mu": "μ", r"\sigma": "σ", r"\Omega": "Ω", r"\omega": "ω", r"\cdots": "⋯",
+}
+
+
+def _to_super(s: str) -> str:
+    if s and all(c in _SUP_FROM for c in s):
+        return s.translate(_SUPERSCRIPT)
+    return f"^({s})" if len(s) > 1 else f"^{s}"
+
+
+def _to_sub(s: str) -> str:
+    if s and all(c in _SUB_FROM for c in s):
+        return s.translate(_SUBSCRIPT)
+    return f"_({s})" if len(s) > 1 else f"_{s}"
+
+
+def _convert_math(expr: str) -> str:
+    """Bitta LaTeX ifodani o'qiladigan Unicode matnga aylantirish (chat uchun)."""
+    s = expr
+    # Daraja belgisi: ^\circ / ^{\circ} / ^\degree -> °
+    s = re.sub(r"\^\s*\{?\s*\\(?:circ|degree)\s*\}?", "°", s)
+    # Aralash son: 3\frac{a}{b} -> 3 a/b (raqamdan keyin bo'shliq)
+    s = re.sub(r"(\d)\s*\\[dt]?frac", r"\1 \\frac", s)
+    # \frac{a}{b} -> a/b (bir necha marta — ichma-ich uchun)
+    frac_re = re.compile(r"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+    for _ in range(5):
+        new = frac_re.sub(r"\1/\2", s)
+        if new == s:
+            break
+        s = new
+    # \sqrt{x} -> √(x)
+    s = re.sub(r"\\sqrt\s*\{([^{}]*)\}", r"√(\1)", s)
+    # Daraja va indeks
+    s = re.sub(r"\^\{([^{}]*)\}", lambda m: _to_super(m.group(1)), s)
+    s = re.sub(r"\^(\w)", lambda m: _to_super(m.group(1)), s)
+    s = re.sub(r"_\{([^{}]*)\}", lambda m: _to_sub(m.group(1)), s)
+    s = re.sub(r"_(\w)", lambda m: _to_sub(m.group(1)), s)
+    # Belgilar
+    for key, val in _LATEX_SYMBOLS.items():
+        s = s.replace(key, val)
+    # Qoldiqlarni tozalash
+    s = s.replace(r"\left", "").replace(r"\right", "")
+    s = s.replace(r"\,", " ").replace(r"\;", " ").replace(r"\!", "")
+    s = s.replace("{", "").replace("}", "")
+    s = re.sub(r"\\([a-zA-Z]+)", r"\1", s)   # qolgan \cmd -> cmd
+    s = s.replace("\\", "")
+    return s
+
+
+def latex_to_text(text: str) -> str:
+    """$...$ ichidagi LaTeX ni Telegram chat uchun o'qiladigan matnga aylantiradi.
+
+    WebApp formulalarni to'liq render qiladi; bu esa bot xabarlarida (preview,
+    javob-kiritish) formulalar o'qiladigan ko'rinishda chiqishi uchun.
+    """
+    if not text or "$" not in text:
+        return text
+    return re.sub(r"\$([^$]+)\$", lambda m: _convert_math(m.group(1)), text)
+
+
 def parse_simple_answers(text: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Foydalanuvchi kiritgan javoblarni ikkala formatda parse qiladi:

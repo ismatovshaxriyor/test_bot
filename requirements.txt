@@ -1,3 +1,7 @@
+# Tizim talabi (pip emas): DOCX -> PDF aylantirish uchun LibreOffice kerak.
+#   macOS:  brew install --cask libreoffice
+#   Linux:  apt-get install libreoffice  (yoki libreoffice-writer)
+# DOCX kerak bo'lmasa, ixtiyoriy — PDF/rasm LibreOffice'siz ishlaydi.
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
@@ -10,6 +14,7 @@ et_xmlfile==2.0.0
 fastapi==0.135.2
 fonttools==4.62.1
 fpdf2==2.8.5
+google-genai==2.8.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
