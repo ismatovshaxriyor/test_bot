@@ -16,10 +16,16 @@
                 label: 'Math',
                 rows: [
                     [
-                        {label:'1',insert:'1'},{label:'2',insert:'2'},{label:'3',insert:'3'},
-                        {label:'4',insert:'4'},{label:'5',insert:'5'},{label:'6',insert:'6'},
-                        {label:'7',insert:'7'},{label:'8',insert:'8'},{label:'9',insert:'9'},
-                        {label:'0',insert:'0'}
+                        {label:'1',insert:'1',shift:{latex:'\\square^{-1}',insert:'^{-1}'}},
+                        {label:'2',insert:'2',shift:{latex:'\\square^{2}',insert:'^{2}'}},
+                        {label:'3',insert:'3',shift:{latex:'\\square^{3}',insert:'^{3}'}},
+                        {label:'4',insert:'4',shift:{latex:'\\square^{4}',insert:'^{4}'}},
+                        {label:'5',insert:'5',shift:{latex:'\\square^{5}',insert:'^{5}'}},
+                        {label:'6',insert:'6',shift:{latex:'\\square^{6}',insert:'^{6}'}},
+                        {label:'7',insert:'7',shift:{latex:'\\square^{7}',insert:'^{7}'}},
+                        {label:'8',insert:'8',shift:{latex:'\\square^{8}',insert:'^{8}'}},
+                        {label:'9',insert:'9',shift:{latex:'\\square^{9}',insert:'^{9}'}},
+                        {label:'0',insert:'0',shift:{latex:'\\infty',insert:'\\infty'}}
                     ],
                     [
                         {latex:'\\pi',insert:'\\pi'},{latex:'e',insert:'e'},
@@ -55,6 +61,9 @@
                         {latex:'\\log\\square',insert:'\\log(#0)',width:1.5},
                         {latex:'\\log_{\\square}\\square',insert:'\\log_{#0}(#0)',width:2},
                         {latex:'\\exp\\square',insert:'\\exp(#0)',width:1.5}
+                    ],
+                    [
+                        '[shift]', '[left]', '[right]', '[return]', '[backspace]'
                     ]
                 ]
             }];
