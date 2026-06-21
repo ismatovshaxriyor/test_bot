@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/mathlive@0.110.0"></script>
     <script type="module">
+    {% raw %}
         window.addEventListener('DOMContentLoaded', () => {
             const vk = window.mathVirtualKeyboard;
             if (!vk) return;
@@ -58,6 +59,7 @@
                 ]
             }];
         });
+    {% endraw %}
     </script>
 
     <style>

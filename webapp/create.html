@@ -225,54 +225,6 @@
             container.appendChild(row);
         }
 
-<<<<<<< HEAD
-        function readFieldValue(field) {
-            // math-field qiymatini xavfsiz o'qish (upgrade bo'lmagan bo'lsa ham)
-            let val = '';
-            if (field && typeof field.getValue === 'function') {
-                try { val = field.getValue(); } catch (e) { val = field.value; }
-            } else if (field && field.value !== undefined) {
-                val = field.value;
-            }
-            return String(val || '').trim();
-        }
-
-        function createOpenField(value, placeholder, onInput) {
-            const field = document.createElement('math-field');
-            field.className = 'open-field';
-            field.setAttribute('virtual-keyboard-mode', 'onfocus');
-            field.setAttribute('smart-mode', 'true');
-            field.setAttribute('placeholder', placeholder);
-            field.value = value;
-            field.setAttribute('value', value);
-
-            const handleInput = () => { onInput(readFieldValue(field)); };
-            // Mobil: ba'zi matn hodisalari kech keladi — bir nechta hodisaga ulanamiz
-            ['input', 'change', 'focusout', 'blur', 'keyup'].forEach((ev) => {
-                field.addEventListener(ev, handleInput);
-            });
-            // Mobil: fokuslanganda virtual klaviatura maydonni yopib qo'ymasligi uchun ko'rinishga suramiz
-            field.addEventListener('focus', () => {
-                setTimeout(() => {
-                    try { field.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
-                }, 200);
-            });
-            return field;
-        }
-
-        function flushOpenFields() {
-            // Sanash/yuborishdan oldin ochiq maydonlarni to'g'ridan-to'g'ri DOM'dan o'qiymiz
-            // — hodisa kech kelsa ham javob "bo'sh" bo'lib qolmasin.
-            document.querySelectorAll('math-field[data-open-idx]').forEach((field) => {
-                const idx = Number(field.dataset.openIdx);
-                if (Number.isInteger(idx) && idx >= 0 && idx < openAnswers.length) {
-                    openAnswers[idx] = readFieldValue(field);
-                }
-            });
-        }
-
-=======
->>>>>>> feature/ai-file-test-creation
         function renderSimpleClosedQuestions() {
             const container = document.getElementById('closed-container');
             container.innerHTML = '';
@@ -301,67 +253,8 @@
             }
         }
 
-<<<<<<< HEAD
-        function renderSimpleOpenQuestions() {
-            const container = document.getElementById('open-container');
-            container.innerHTML = '';
-
-            if (openCount === 0) {
-                const empty = document.createElement('p');
-                empty.className = 'text-xs opacity-60';
-                empty.textContent = 'Ochiq savol qo\'shilmagan.';
-                container.appendChild(empty);
-                return;
-            }
-
-            for (let i = 0; i < openCount; i++) {
-                const row = document.createElement('div');
-                row.className = 'question-row p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition';
-
-                const top = document.createElement('div');
-                top.className = 'flex items-center justify-between mb-2';
-
-                const num = document.createElement('span');
-                num.className = 'font-bold text-sm';
-                num.textContent = `${closedCount + i + 1}.`;
-                top.appendChild(num);
-
-                const badge = document.createElement('span');
-                badge.className = 'text-[11px] px-2 py-1 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200';
-                badge.textContent = 'Maxsus klaviatura';
-                top.appendChild(badge);
-
-                row.appendChild(top);
-
-                const field = createOpenField(
-                    openAnswers[i],
-                    'Javobni yozing (formula bo\'lsa ham bo\'ladi)',
-                    (nextValue) => {
-                        openAnswers[i] = nextValue;
-                        updateMainButton();
-                    }
-                );
-                field.dataset.openIdx = String(i);
-
-                row.appendChild(field);
-                container.appendChild(row);
-            }
-        }
-        function countSimpleAnswered() {
-            const answeredClosed = closedAnswers.filter((a) => a !== '').length;
-            const answeredOpen = openAnswers.filter((a) => a !== '').length;
-            return answeredClosed + answeredOpen;
-        }
-
-        function updateMainButton() {
-            flushOpenFields();
-            const total = closedCount + openCount;
-
-            if (total === 0) {
-=======
         function updateMainButton() {
             if (closedCount === 0) {
->>>>>>> feature/ai-file-test-creation
                 WebApp.MainButton.hide();
                 return;
             }
@@ -418,14 +311,7 @@
         }
 
         function handleMainButtonClick() {
-<<<<<<< HEAD
-            flushOpenFields();
-
-            const total = closedCount + openCount;
-            if (total === 0) {
-=======
             if (closedCount === 0) {
->>>>>>> feature/ai-file-test-creation
                 WebApp.showAlert('Kamida 1 ta savol qo\'shing.');
                 notifyHaptic('warning');
                 return;
@@ -498,36 +384,6 @@
                     }
                 }
             }
-        });
-
-        // MathLive virtual klaviaturasini tashqariga bosib yopish (mobil)
-        function hideMathKeyboard() {
-            try {
-                const vk = window.mathVirtualKeyboard;
-                if (vk && vk.visible) vk.hide();
-            } catch (e) {}
-            const active = document.activeElement;
-            if (active && active.tagName && active.tagName.toLowerCase() === 'math-field') {
-                try { active.blur(); } catch (e) {}
-            }
-        }
-        function tapIsOnMathKeyboard(ev) {
-            const vk = window.mathVirtualKeyboard;
-            if (vk && vk.boundingRect && vk.boundingRect.width > 0) {
-                const r = vk.boundingRect;
-                if (ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 &&
-                    ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4) {
-                    return true;
-                }
-            }
-            return !!(ev.target && ev.target.closest && ev.target.closest('.ML__keyboard'));
-        }
-        document.addEventListener('pointerdown', (ev) => {
-            if (ev.target && ev.target.closest && ev.target.closest('math-field')) return;
-            const vk = window.mathVirtualKeyboard;
-            if (!vk || !vk.visible) return;
-            if (tapIsOnMathKeyboard(ev)) return;
-            hideMathKeyboard();
         });
 
         renderAll();
