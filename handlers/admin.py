@@ -502,6 +502,25 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
     AdminTestWatch.delete().where(AdminTestWatch.test == test).execute()
 
     await query.answer(f"✅ #{test_id} test tugatildi!", show_alert=True)
+
+    # Ishtirokchilarga yakuniy natijalarni yuborish (creator yakunlagandagi kabi)
+    from handlers.test_manage import _notify_participants_final_results
+    await _notify_participants_final_results(context, test)
+
+    # Test egasiga xabar (admin tugatgani haqida)
+    if test.creator.telegram_id != update.effective_user.id:
+        try:
+            await context.bot.send_message(
+                chat_id=test.creator.telegram_id,
+                text=(
+                    f"ℹ️ <b>Sizning testingiz admin tomonidan yakunlandi.</b>\n\n"
+                    f"📝 Test: <code>{test.id}</code>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
     await admin_active_tests_callback(update, context)
 
 
