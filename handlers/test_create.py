@@ -19,7 +19,8 @@ import re
 logger = logging.getLogger(__name__)
 
 # Conversation states
-WAITING_ANSWERS = 0
+CHOOSING_MODE = 0
+WAITING_ANSWERS = 1
 
 
 def _normalize_rasch_questions(questions: list) -> list:
@@ -85,29 +86,76 @@ def _normalize_rasch_questions(questions: list) -> list:
 
 @membership_required
 async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Oddiy testni bot ichida tezkor yaratish yoki WebApp orqali tanlash"""
-    keyboard = ReplyKeyboardMarkup([
+    """Test yaratish — avval turini tanlash"""
+    inline_keyboard = InlineKeyboardMarkup([
         [
-            KeyboardButton("🚀 Oddiy test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}")),
-            KeyboardButton("📐 Rash test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))
-        ],
-        [KeyboardButton("Ortga")]
-    ], resize_keyboard=True)
+            InlineKeyboardButton("📊 Oddiy test", callback_data="create_mode_simple"),
+            InlineKeyboardButton("📐 Rash test", callback_data="create_mode_rasch"),
+        ]
+    ])
 
     await update.message.reply_html(
         "📝 <b>Test yaratish</b>\n\n"
-        "To'g'ri javoblarni quyidagi ikki usuldan birida yuboring:\n\n"
-        "1️⃣ <b>Klassik usul</b> — harflarni ketma-ket yozing:\n"
-        "   <code>aabbcabacbad</code>\n\n"
-        "2️⃣ <b>Raqamli usul</b> — raqam + harf bilan yozing:\n"
-        "   <code>1a2a3b4c5a6b</code>\n"
-        "   <code>1-a 2-a 3-b 4-c</code>\n\n"
-        "📌 Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n"
-        "📌 Aralash yoki Rash modeli uchun quyidagi WebApp tugmalardan foydalaning.\n\n"
-        "❌ Bekor qilish: /cancel yoki Ortga",
-        reply_markup=keyboard
+        "Qaysi turdagi test yaratmoqchisiz?",
+        reply_markup=inline_keyboard
     )
+    return CHOOSING_MODE
+
+
+async def choose_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inline tugma orqali test turini tanlash"""
+    query = update.callback_query
+    await query.answer()
+
+    mode = query.data.replace("create_mode_", "")
+
+    # Inline tugmalarni olib tashlash (qayta bosish mumkin emas)
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    if mode == "rasch":
+        keyboard = ReplyKeyboardMarkup([
+            [KeyboardButton("📐 Rash test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))],
+            [KeyboardButton("Ortga")]
+        ], resize_keyboard=True)
+
+        await query.message.reply_html(
+            "📐 <b>Rash test yaratish</b>\n\n"
+            "Pastdagi tugmani bosib WebApp orqali yarating.",
+            reply_markup=keyboard
+        )
+    else:
+        keyboard = ReplyKeyboardMarkup([
+            [KeyboardButton("🚀 Oddiy test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))],
+            [KeyboardButton("Ortga")]
+        ], resize_keyboard=True)
+
+        await query.message.reply_html(
+            "📊 <b>Oddiy test yaratish</b>\n\n"
+            "To'g'ri javoblarni quyidagi ikki usuldan birida yuboring:\n\n"
+            "1️⃣ <b>Klassik usul</b> — harflarni ketma-ket yozing:\n"
+            "   <code>aabbcabacbad</code>\n\n"
+            "2️⃣ <b>Raqamli usul</b> — raqam + harf bilan yozing:\n"
+            "   <code>1a2a3b4c5a6b</code>\n"
+            "   <code>1-a 2-a 3-b 4-c</code>\n\n"
+            "📌 Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n"
+            "📌 Yoki pastdagi tugma orqali WebApp'da yarating.\n\n"
+            "❌ Bekor qilish: /cancel yoki Ortga",
+            reply_markup=keyboard
+        )
+
     return WAITING_ANSWERS
+
+
+async def choosing_mode_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """CHOOSING_MODE da matn kelsa — Ortga yoki noto'g'ri kiritish"""
+    raw = update.message.text.strip()
+    if raw.lower() == "ortga":
+        return await cancel_command(update, context)
+    await update.message.reply_html("Yuqoridagi tugmalardan birini tanlang.")
+    return CHOOSING_MODE
 
 
 @membership_required
@@ -180,7 +228,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Bu kodni boshqalarga yuboring!",
         reply_markup=test_created_keyboard(test_id, bot_username, len(answers))
     )
-    
+
     await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
 
     return ConversationHandler.END
@@ -317,9 +365,9 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             f"Bu kodni boshqalarga yuboring!",
             reply_markup=test_created_keyboard(test_id, bot_username, questions_count)
         )
-        
+
         await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
-        
+
         logger.info("WEBAPP CREATE: created test_id=%s user_id=%s mode=%s", test_id, user.id, scoring_mode)
         return ConversationHandler.END
 
@@ -352,6 +400,13 @@ def get_handlers():
             ),
         ],
         states={
+            CHOOSING_MODE: [
+                CallbackQueryHandler(choose_mode_callback, pattern=r"^create_mode_(simple|rasch)$"),
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    choosing_mode_text
+                ),
+            ],
             WAITING_ANSWERS: [
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,

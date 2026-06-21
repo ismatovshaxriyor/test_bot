@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Test yaratish</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://unpkg.com/mathlive@0.110.0"></script>
+    <script defer src="https://cdn.tailwindcss.com"></script>
 
     <style>
         body {
@@ -39,18 +38,6 @@
             background: rgba(31,41,55,0.88);
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .mode-card {
-            border: 2px solid #e5e7eb;
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-        .mode-card.active {
-            border-color: var(--tg-theme-button-color, #3b82f6);
-            background: rgba(59,130,246,0.08);
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
-        }
-        [data-theme='dark'] .mode-card { border-color: #4b5563; }
-        [data-theme='dark'] .mode-card.active { background: rgba(59,130,246,0.15); border-color: #60a5fa; }
 
         .counter-btn {
             width: 42px;
@@ -87,59 +74,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .open-field {
-            width: 100%;
-            min-height: 46px;
-            border: 1.5px solid #d1d5db;
-            border-radius: 10px;
-            padding: 8px 10px;
-            background: #081a33;
-            color: #ffffff;
-            transition: border-color 0.15s;
-        }
-        .open-field::placeholder {
-            color: rgba(255, 255, 255, 0.72);
-        }
-        .open-field:focus-within {
-            border-color: #8b5cf6;
-            box-shadow: 0 0 0 2px rgba(139,92,246,0.15);
-        }
-        [data-theme='dark'] .open-field {
-            border-color: #4b5563;
-            background: #081a33;
-            color: #ffffff;
-        }
-        .open-field::part(virtual-keyboard-toggle),
-        .open-field::part(menu-toggle) {
-            margin: 0;
-            padding-inline: 6px;
-        }
-        .open2-pair {
-            display: grid;
-            grid-template-columns: 1fr;
-            row-gap: 0;
-            column-gap: 8px;
-        }
-        @media (min-width: 640px) {
-            .open2-pair {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                row-gap: 6px;
-            }
-        }
-        @media (max-width: 480px) {
-            .open-field::part(virtual-keyboard-toggle),
-            .open-field::part(menu-toggle) {
-                padding-inline: 3px;
-                transform: translateX(4px);
-            }
-            .open-field::part(virtual-keyboard-toggle) {
-                margin-right: -6px;
-            }
-            .open-field::part(menu-toggle) {
-                margin-left: -6px;
-            }
-        }
-
         .count-box {
             border: 1px solid #cbd5e1;
             border-radius: 12px;
@@ -149,8 +83,7 @@
             border-color: #475569;
         }
 
-        /* Mobil: tap kechikishi/zoom yo'q, kulrang highlightni olib tashlash */
-        button, .option-btn, .counter-btn, input, math-field {
+        button, .option-btn, .counter-btn {
             touch-action: manipulation;
             -webkit-tap-highlight-color: transparent;
         }
@@ -161,52 +94,29 @@
         <div class="absolute -top-12 -right-12 w-28 h-28 bg-green-400 rounded-full opacity-10 blur-2xl"></div>
         <div class="absolute -bottom-12 -left-12 w-36 h-36 bg-blue-500 rounded-full opacity-10 blur-2xl"></div>
 
-        <h1 class="text-2xl font-extrabold text-center mb-5 tracking-tight">📝 Yangi test yaratish</h1>
-
-
+        <h1 class="text-2xl font-extrabold text-center mb-5 tracking-tight">📝 Oddiy test yaratish</h1>
 
         <div id="simple-config">
-            <div class="grid grid-cols-1 gap-3 mb-4">
-                <div class="count-box">
-                    <label class="block font-semibold mb-2 text-sm opacity-80">Yopiq savollar soni (A,B,C,D)</label>
-                    <div class="flex items-center justify-between gap-2">
-                        <button class="counter-btn" onclick="changeClosedCount(-5)">-5</button>
-                        <button class="counter-btn" onclick="changeClosedCount(-1)">−</button>
-                        <span id="closed-count-display" class="text-3xl font-black w-16 text-center tabular-nums">10</span>
-                        <button class="counter-btn" onclick="changeClosedCount(1)">+</button>
-                        <button class="counter-btn" onclick="changeClosedCount(5)">+5</button>
-                    </div>
-                </div>
-
-                <div class="count-box">
-                    <label class="block font-semibold mb-2 text-sm opacity-80">Ochiq savollar soni (maxsus klaviatura)</label>
-                    <div class="flex items-center justify-between gap-2">
-                        <button class="counter-btn" onclick="changeOpenCount(-5)">-5</button>
-                        <button class="counter-btn" onclick="changeOpenCount(-1)">−</button>
-                        <span id="open-count-display" class="text-3xl font-black w-16 text-center tabular-nums">0</span>
-                        <button class="counter-btn" onclick="changeOpenCount(1)">+</button>
-                        <button class="counter-btn" onclick="changeOpenCount(5)">+5</button>
-                    </div>
+            <div class="count-box mb-4">
+                <label class="block font-semibold mb-2 text-sm opacity-80">Savollar soni</label>
+                <div class="flex items-center justify-between gap-2">
+                    <button class="counter-btn" onclick="changeClosedCount(-5)">-5</button>
+                    <button class="counter-btn" onclick="changeClosedCount(-1)">−</button>
+                    <span id="closed-count-display" class="text-3xl font-black w-16 text-center tabular-nums">10</span>
+                    <button class="counter-btn" onclick="changeClosedCount(1)">+</button>
+                    <button class="counter-btn" onclick="changeClosedCount(5)">+5</button>
                 </div>
             </div>
 
             <div class="section-card rounded-xl p-3 mb-4">
                 <div class="flex items-center justify-between mb-2">
-                    <h2 class="font-bold text-sm">Yopiq savollar</h2>
+                    <h2 class="font-bold text-sm">Javoblar</h2>
                     <span id="closed-caption" class="text-xs opacity-70">0 ta</span>
                 </div>
                 <div id="closed-container" class="space-y-2"></div>
             </div>
-
-            <div class="section-card rounded-xl p-3">
-                <div class="flex items-center justify-between mb-2">
-                    <h2 class="font-bold text-sm">Ochiq savollar</h2>
-                    <span id="open-caption" class="text-xs opacity-70">0 ta</span>
-                </div>
-                <div id="open-container" class="space-y-3"></div>
-            </div>
         </div>
-
+    </div>
 
     <script>
         const tgApp = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
@@ -250,9 +160,7 @@
         const MAX_TOTAL_QUESTIONS = 300;
 
         let closedCount = 10;
-        let openCount = 0;
         let closedAnswers = [];
-        let openAnswers = [];
 
         function selectionHaptic() {
             if (WebApp.HapticFeedback && WebApp.HapticFeedback.selectionChanged) {
@@ -266,7 +174,6 @@
             }
         }
 
-
         function resizeArray(arr, size) {
             const next = arr.slice(0, size);
             while (next.length < size) {
@@ -277,72 +184,38 @@
 
         function refreshCounts() {
             document.getElementById('closed-count-display').textContent = closedCount;
-            document.getElementById('open-count-display').textContent = openCount;
             document.getElementById('closed-caption').textContent = `${closedCount} ta`;
-            document.getElementById('open-caption').textContent = `${openCount} ta`;
         }
 
         function syncSimpleState() {
             closedAnswers = resizeArray(closedAnswers, closedCount);
-            openAnswers = resizeArray(openAnswers, openCount);
             refreshCounts();
         }
 
-        function validateTotalLimit(nextClosed, nextOpen) {
-            const total = nextClosed + nextOpen;
-            if (total > MAX_TOTAL_QUESTIONS) {
-                WebApp.showAlert(`Savollar soni ${MAX_TOTAL_QUESTIONS} tadan oshmasligi kerak.`);
-                return false;
-            }
-            return true;
-        }
-
         function changeClosedCount(delta) {
-            const next = Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, closedCount + delta));
-            if (next === closedCount) {
-                return;
-            }
-            if (!validateTotalLimit(next, openCount)) {
-                return;
-            }
+            const next = Math.max(1, Math.min(MAX_TOTAL_QUESTIONS, closedCount + delta));
+            if (next === closedCount) return;
             closedCount = next;
             selectionHaptic();
             renderAll();
         }
 
-        function changeOpenCount(delta) {
-            const next = Math.max(0, Math.min(MAX_TOTAL_QUESTIONS, openCount + delta));
-            if (next === openCount) {
-                return;
-            }
-            if (!validateTotalLimit(closedCount, next)) {
-                return;
-            }
-            openCount = next;
-            selectionHaptic();
-            renderAll();
-        }
-
         function renderOptionRow(container, questionNum, options, selectedValue, onSelect) {
-            const isSixOptions = options.length === 6;
             const row = document.createElement('div');
-            row.className = `question-row flex items-center ${isSixOptions ? 'gap-1.5' : 'gap-2'} p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition`;
+            row.className = 'question-row flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/30 transition';
 
             const num = document.createElement('span');
-            num.className = `font-bold ${isSixOptions ? 'w-8' : 'w-10'} text-sm flex-shrink-0`;
+            num.className = 'font-bold w-10 text-sm flex-shrink-0';
             num.textContent = `${questionNum}.`;
             row.appendChild(num);
 
             const optsDiv = document.createElement('div');
-            optsDiv.className = isSixOptions
-                ? 'flex flex-1 gap-1 justify-end items-center flex-nowrap'
-                : 'flex flex-1 gap-1.5 justify-end flex-wrap';
+            optsDiv.className = 'flex flex-1 gap-1.5 justify-end flex-wrap';
 
             options.forEach((opt) => {
                 const btn = document.createElement('button');
                 const value = opt.toLowerCase();
-                const sizeClass = isSixOptions ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
-                btn.className = `option-btn ${sizeClass} rounded-lg flex items-center justify-center font-medium focus:outline-none active:scale-95 shadow-sm ${selectedValue === value ? 'selected' : ''}`;
+                btn.className = `option-btn w-10 h-10 text-sm rounded-lg flex items-center justify-center font-medium focus:outline-none active:scale-95 shadow-sm ${selectedValue === value ? 'selected' : ''}`;
                 btn.textContent = opt;
                 btn.onclick = () => onSelect(value);
                 optsDiv.appendChild(btn);
@@ -352,6 +225,7 @@
             container.appendChild(row);
         }
 
+<<<<<<< HEAD
         function readFieldValue(field) {
             // math-field qiymatini xavfsiz o'qish (upgrade bo'lmagan bo'lsa ham)
             let val = '';
@@ -397,6 +271,8 @@
             });
         }
 
+=======
+>>>>>>> feature/ai-file-test-creation
         function renderSimpleClosedQuestions() {
             const container = document.getElementById('closed-container');
             container.innerHTML = '';
@@ -404,7 +280,7 @@
             if (closedCount === 0) {
                 const empty = document.createElement('p');
                 empty.className = 'text-xs opacity-60';
-                empty.textContent = 'Yopiq savol qo\'shilmagan.';
+                empty.textContent = 'Savol qo\'shilmagan.';
                 container.appendChild(empty);
                 return;
             }
@@ -425,6 +301,7 @@
             }
         }
 
+<<<<<<< HEAD
         function renderSimpleOpenQuestions() {
             const container = document.getElementById('open-container');
             container.innerHTML = '';
@@ -481,19 +358,23 @@
             const total = closedCount + openCount;
 
             if (total === 0) {
+=======
+        function updateMainButton() {
+            if (closedCount === 0) {
+>>>>>>> feature/ai-file-test-creation
                 WebApp.MainButton.hide();
                 return;
             }
 
-            const answered = countSimpleAnswered();
+            const answered = closedAnswers.filter((a) => a !== '').length;
 
             WebApp.MainButton.show();
 
-            if (answered === total) {
-                WebApp.MainButton.text = `TEST YARATISH ✅ (${total} savol)`;
+            if (answered === closedCount) {
+                WebApp.MainButton.text = `TEST YARATISH ✅ (${closedCount} savol)`;
                 WebApp.MainButton.color = '#22c55e';
             } else {
-                WebApp.MainButton.text = `${answered}/${total} belgilangan`;
+                WebApp.MainButton.text = `${answered}/${closedCount} belgilangan`;
                 WebApp.MainButton.color = WebApp.themeParams.button_color || '#8b5cf6';
             }
         }
@@ -501,7 +382,6 @@
         function renderAll() {
             syncSimpleState();
             renderSimpleClosedQuestions();
-            renderSimpleOpenQuestions();
             updateMainButton();
         }
 
@@ -514,9 +394,8 @@
 
             const payload = JSON.stringify(payloadObject);
 
-            // Telegram WebApp data limit (safety guard)
             if (payload.length > 3800) {
-                WebApp.showAlert('Javoblar juda uzun bo\'lib ketdi. Savollar sonini yoki javob matnini qisqartiring.');
+                WebApp.showAlert('Javoblar juda uzun bo\'lib ketdi. Savollar sonini qisqartiring.');
                 notifyHaptic('warning');
                 return;
             }
@@ -539,10 +418,14 @@
         }
 
         function handleMainButtonClick() {
+<<<<<<< HEAD
             flushOpenFields();
 
             const total = closedCount + openCount;
             if (total === 0) {
+=======
+            if (closedCount === 0) {
+>>>>>>> feature/ai-file-test-creation
                 WebApp.showAlert('Kamida 1 ta savol qo\'shing.');
                 notifyHaptic('warning');
                 return;
@@ -552,11 +435,6 @@
             for (let i = 0; i < closedCount; i++) {
                 if (!closedAnswers[i]) {
                     unanswered.push(i + 1);
-                }
-            }
-            for (let i = 0; i < openCount; i++) {
-                if (!openAnswers[i]) {
-                    unanswered.push(closedCount + i + 1);
                 }
             }
 
@@ -571,38 +449,10 @@
 
             notifyHaptic('success');
 
-            if (openCount === 0) {
-                sendToBot({
-                    action: 'create_test',
-                    scoring_mode: 'simple',
-                    answers: closedAnswers.join('').toLowerCase()
-                });
-                return;
-            }
-
-            const questions = [];
-
-            for (let i = 0; i < closedCount; i++) {
-                questions.push({
-                    num: i + 1,
-                    type: 'closed',
-                    answer: String(closedAnswers[i] || '').toLowerCase()
-                });
-            }
-
-            for (let i = 0; i < openCount; i++) {
-                questions.push({
-                    num: closedCount + i + 1,
-                    type: 'open',
-                    answer: String(openAnswers[i] || '').trim()
-                });
-            }
-
             sendToBot({
                 action: 'create_test',
                 scoring_mode: 'simple',
-                answers_format: 'mixed',
-                questions
+                answers: closedAnswers.join('').toLowerCase()
             });
         }
 
@@ -615,9 +465,7 @@
         // --- GLOBAL KEYBOARD SUPPORT ---
         document.addEventListener('keydown', (e) => {
             const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-            if (['input', 'textarea', 'math-field'].includes(activeTag)) {
-                return;
-            }
+            if (['input', 'textarea'].includes(activeTag)) return;
 
             const key = e.key.toLowerCase();
             const validKeys = ['a', 'b', 'c', 'd'];
@@ -630,7 +478,7 @@
                     renderSimpleClosedQuestions();
                     updateMainButton();
                     e.preventDefault();
-                    
+
                     const nextEmptyBtn = document.querySelector('.question-row button:not(.selected)');
                     if (nextEmptyBtn) {
                         nextEmptyBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });

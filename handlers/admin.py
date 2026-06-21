@@ -727,6 +727,54 @@ async def delete_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await list_admins_callback(update, context)
 
 
+@admin_only
+async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/whois <id> — ID'ni bosiladigan Telegram mention'iga aylantiradi.
+
+    `<a href="tg://user?id=...">` havolasini bosganda Telegram o'sha foydalanuvchi
+    profilini ochadi (mijoz ID'ni hal qila olsa). Bot o'sha odamni ilgari ko'rgan
+    bo'lsa, ism/username ham qo'shiladi.
+    """
+    args = context.args
+    if not args or not args[0].lstrip("-").isdigit():
+        await update.message.reply_text(
+            "Foydalanish: /whois <telegram_id>\nMasalan: /whois 123456789"
+        )
+        return
+
+    uid = int(args[0])
+    lines = [
+        f"🆔 <code>{uid}</code>",
+        "",
+        f'<a href="tg://user?id={uid}">👤 Profilni ochish</a>  '
+        f'(havolani bosing — profil ochiladi)',
+    ]
+
+    # Bizning bazada bormi?
+    try:
+        u = User.get(User.telegram_id == uid)
+        uname = f"@{u.username}" if u.username else "—"
+        lines += ["", "📂 <b>Botda mavjud:</b>",
+                  f"• Ism: {escape(u.full_name or '—')}",
+                  f"• Username: {escape(uname)}"]
+    except User.DoesNotExist:
+        pass
+
+    # Telegram'dan (bot bu chatni ko'ra olsa — odam botga yozgan bo'lsa)
+    try:
+        chat = await context.bot.get_chat(uid)
+        nm = " ".join(filter(None, [chat.first_name, chat.last_name])) or "—"
+        cu = f"@{chat.username}" if chat.username else "—"
+        lines += ["", "🌐 <b>Telegram:</b>",
+                  f"• Ism: {escape(nm)}",
+                  f"• Username: {escape(cu)}"]
+    except TelegramError:
+        lines += ["", "ℹ️ Bot bu foydalanuvchini to'g'ridan-to'g'ri ko'ra olmadi "
+                  "(u botga yozmagan bo'lishi mumkin) — havolani bosib ko'ring."]
+
+    await update.message.reply_html("\n".join(lines), disable_web_page_preview=True)
+
+
 def get_handlers():
     """Handlerlarni qaytarish"""
     # Kanal qo'shish conversation
@@ -754,6 +802,7 @@ def get_handlers():
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
         CommandHandler("broadcast", broadcast_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("whois", whois_command, filters=filters.ChatType.PRIVATE),
         add_channel_conv,
         add_admin_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),

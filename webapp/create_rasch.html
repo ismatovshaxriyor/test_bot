@@ -7,6 +7,58 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/mathlive@0.110.0"></script>
+    <script type="module">
+        window.addEventListener('DOMContentLoaded', () => {
+            const vk = window.mathVirtualKeyboard;
+            if (!vk) return;
+            vk.layouts = [{
+                label: 'Math',
+                rows: [
+                    [
+                        {label:'1',insert:'1'},{label:'2',insert:'2'},{label:'3',insert:'3'},
+                        {label:'4',insert:'4'},{label:'5',insert:'5'},{label:'6',insert:'6'},
+                        {label:'7',insert:'7'},{label:'8',insert:'8'},{label:'9',insert:'9'},
+                        {label:'0',insert:'0'}
+                    ],
+                    [
+                        {latex:'\\pi',insert:'\\pi'},{latex:'e',insert:'e'},
+                        {label:'a',insert:'a'},{label:'b',insert:'b'},{label:'c',insert:'c'},
+                        {label:'x',insert:'x'},{label:'y',insert:'y'},{label:'z',insert:'z'},
+                        {label:'.',insert:'.'}
+                    ],
+                    [
+                        {label:'(',insert:'('},{label:')',insert:')'},
+                        {latex:'\\frac{\\square}{\\square}',insert:'\\frac{#0}{#0}'},
+                        {latex:'\\sqrt{\\square}',insert:'\\sqrt{#0}'},
+                        {latex:'\\square^{\\square}',insert:'#0^{#0}'},
+                        {latex:'\\square^2',insert:'#0^{2}'},
+                        {latex:'\\square^3',insert:'#0^{3}'},
+                        {latex:'\\sqrt[3]{\\square}',insert:'\\sqrt[3]{#0}'},
+                        {latex:'\\sqrt[n]{\\square}',insert:'\\sqrt[#0]{#0}'}
+                    ],
+                    [
+                        {label:'+',insert:'+'},{label:'−',insert:'-'},
+                        {latex:'\\sin\\square',insert:'\\sin(#0)'},
+                        {latex:'\\cos\\square',insert:'\\cos(#0)'},
+                        {latex:'\\tan\\square',insert:'\\tan(#0)'},
+                        {latex:'\\cot\\square',insert:'\\cot(#0)'}
+                    ],
+                    [
+                        {latex:'\\arcsin\\square',insert:'\\arcsin(#0)'},
+                        {latex:'\\arccos\\square',insert:'\\arccos(#0)'},
+                        {latex:'\\arctan\\square',insert:'\\arctan(#0)'},
+                        {latex:'\\text{arcctg}\\square',insert:'\\text{arcctg}(#0)'}
+                    ],
+                    [
+                        {latex:'\\ln\\square',insert:'\\ln(#0)'},
+                        {latex:'\\log\\square',insert:'\\log(#0)'},
+                        {latex:'\\log_{\\square}\\square',insert:'\\log_{#0}(#0)'},
+                        {latex:'\\exp\\square',insert:'\\exp(#0)'}
+                    ]
+                ]
+            }];
+        });
+    </script>
 
     <style>
         body {
@@ -109,10 +161,12 @@
             background: #081a33;
             color: #ffffff;
         }
-        .open-field::part(virtual-keyboard-toggle),
-        .open-field::part(menu-toggle) {
+        .open-field::part(virtual-keyboard-toggle) {
             margin: 0;
             padding-inline: 6px;
+        }
+        .open-field::part(menu-toggle) {
+            display: none;
         }
         .open2-pair {
             display: grid;
@@ -127,16 +181,10 @@
             }
         }
         @media (max-width: 480px) {
-            .open-field::part(virtual-keyboard-toggle),
-            .open-field::part(menu-toggle) {
+            .open-field::part(virtual-keyboard-toggle) {
                 padding-inline: 3px;
                 transform: translateX(4px);
-            }
-            .open-field::part(virtual-keyboard-toggle) {
                 margin-right: -6px;
-            }
-            .open-field::part(menu-toggle) {
-                margin-left: -6px;
             }
         }
 
