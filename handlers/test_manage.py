@@ -2,7 +2,7 @@
 from datetime import datetime
 from html import escape
 from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, filters
 
 from database import get_or_create_user, Test, TestSubmission
 from utils import (
@@ -289,6 +289,18 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.message.edit_text("❌ Bu test allaqachon yakunlangan!")
         return
 
+    if test.scoring_mode == "rasch":
+        subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
+        if subs_count < 5:
+            await query.message.edit_text(
+                f"❌ <b>Rash testni yakunlash uchun kamida 5 ta ishtirokchi kerak!</b>\n\n"
+                f"Hozirgi ishtirokchilar: {subs_count} ta\n"
+                f"Yana kamida {5 - subs_count} ta ishtirokchi kutilmoqda.",
+                parse_mode="HTML",
+                reply_markup=test_active_stats_keyboard(code)
+            )
+            return
+
     # Testni yakunlash
     test.is_active = False
     test.ended_at = datetime.now()
@@ -434,19 +446,31 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    ended_subs = [s for s in submissions if not s.test.is_active]
+    active_subs = [s for s in submissions if s.test.is_active]
+
     total_tests = len(submissions)
-    total_correct = sum(s.correct_count for s in submissions)
-    total_questions = sum(s.total_count for s in submissions)
+    total_correct = sum(s.correct_count for s in ended_subs)
+    total_questions = sum(s.total_count for s in ended_subs)
     avg_percentage = round((total_correct / total_questions) * 100, 1) if total_questions > 0 else 0
 
     text = f"📊 <b>Sizning statistikangiz</b>\n\n"
     text += f"📝 Yechilgan testlar: {total_tests} ta\n"
-    text += f"✅ To'g'ri javoblar: {total_correct}/{total_questions}\n"
-    text += f"📈 O'rtacha natija: {avg_percentage}%\n\n"
+    if ended_subs:
+        text += f"✅ To'g'ri javoblar: {total_correct}/{total_questions}\n"
+        text += f"📈 O'rtacha natija: {avg_percentage}%\n\n"
+    else:
+        text += "\n"
 
-    text += "<b>So'nggi natijalar:</b>\n"
-    for sub in sorted(submissions, key=lambda s: s.submitted_at, reverse=True)[:5]:
-        text += f"  • <code>{sub.test.id}</code>: {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
+    if ended_subs:
+        text += "<b>So'nggi natijalar:</b>\n"
+        for sub in sorted(ended_subs, key=lambda s: s.submitted_at, reverse=True)[:5]:
+            text += f"  • <code>{sub.test.id}</code>: {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
+
+    if active_subs:
+        text += "\n<b>Kutilmoqda (test yakunlanmagan):</b>\n"
+        for sub in sorted(active_subs, key=lambda s: s.submitted_at, reverse=True)[:5]:
+            text += f"  • <code>{sub.test.id}</code>: ⏳ natija test yakunlangach e'lon qilinadi\n"
 
     await update.message.reply_html(text, reply_markup=main_menu_keyboard(update.effective_user.id))
 
@@ -502,6 +526,9 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
         elif fmt == 'chart':
             filepath = export_chart(stats, test)
+            if not filepath:
+                await query.message.reply_text("📭 Grafik uchun savol ma'lumoti yetarli emas.")
+                return
             with open(filepath, 'rb') as f:
                 await query.message.reply_photo(
                     photo=f,
@@ -521,10 +548,10 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_handlers():
     """Handlerlarni qaytarish"""
     return [
-        CommandHandler("stats", stats_command),
-        CommandHandler("end", end_command),
-        CommandHandler("mytests", mytests_command),
-        CommandHandler("mystats", mystats_command),
+        CommandHandler("stats", stats_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("end", end_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("mytests", mytests_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("mystats", mystats_command, filters=filters.ChatType.PRIVATE),
         # Callback handlers
         CallbackQueryHandler(stats_callback, pattern=r"^stats_"),
         CallbackQueryHandler(end_callback, pattern=r"^end_(?!confirm)"),

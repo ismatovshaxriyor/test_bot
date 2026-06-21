@@ -32,7 +32,8 @@ def create_rich_test(db_user, questions: List[dict], scoring_mode: str = "simple
 
     Args:
         db_user: User obyekti (yaratuvchi)
-        questions: [{num, type, answer, (text), (options), (has_image)}], 1..N tartibda
+        questions: [{num, type, answer, (text), (options), (has_image), (image_file_id)}],
+                    1..N tartibda
         scoring_mode: 'simple' yoki 'rasch'
         source: 'ai' | 'file' | 'manual'
 
@@ -72,6 +73,7 @@ def create_rich_test(db_user, questions: List[dict], scoring_mode: str = "simple
                 text=(q.get("text") or None),
                 options=json.dumps(options, ensure_ascii=False) if options else None,
                 answer=_storage_answer(q),
+                image_file_id=(q.get("image_file_id") or None),
                 has_image=bool(q.get("has_image")),
             )
 

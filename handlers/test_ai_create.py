@@ -1,12 +1,16 @@
 """Fayldan (PDF/rasm) AI orqali test yaratish + rasm biriktirish.
 
-Oqim:
+Oqim (AI/fayl):
   1. Menyu "📸 Fayldan test" → WAITING_FILE
-  2. Foydalanuvchi PDF/rasm yuboradi → AI ajratadi → PREVIEW_CONFIRM
-  3. Tasdiqlash → test yaratiladi → rasm biriktirish (global handlerlar) → tayyor
+  2. Foydalanuvchi PDF/DOCX/rasm yuboradi → AI ajratadi → FILLING
+  3. FILLING: to'ldirilishi kerak (javobi yo'q YOKI AI rasm bor degan) har bir savol
+     birma-bir so'raladi — avval javobi, keyin (kerak bo'lsa) rasmi; navbat bilan
+     keyingisiga o'tiladi. AI rasm bor deb xato belgilagan bo'lsa egasi «Rasm yo'q»
+     deydi. Oxirida yakuniy tasdiq → test BIR MARTA yaratiladi (rasm bilan birga).
 
-Rasm biriktirish suhbatdan TASHQARIDA, global handlerlar + user_data orqali ishlaydi —
-shu tufayli AI oqimi ham, qo'lda (WebApp) oqimi ham bir xil mexanizmga keladi.
+Qo'lda (WebApp) oqimi esa testni API orqali yaratadi, so'ng rasm biriktirish
+suhbatdan TASHQARIDA, global handlerlar + user_data orqali ishlaydi
+(handle_rich_test_created → start_image_collection).
 """
 import asyncio
 import json
@@ -35,11 +39,9 @@ logger = logging.getLogger(__name__)
 
 # Conversation states
 WAITING_FILE = 0
-PREVIEW_CONFIRM = 1
-ANSWER_ENTRY = 2
+FILLING = 1          # javob/rasm to'ldirish (savol-ma-savol)
 
 MAX_FILE_BYTES = 20 * 1024 * 1024  # Telegram getFile cheki ~20MB
-_PREVIEW_MAX_QUESTIONS = 25         # preview'da ko'rsatiladigan maksimal savol
 
 
 def _answer_letters(q: dict) -> list:
@@ -61,15 +63,28 @@ def _is_answer_missing(q: dict) -> bool:
     return not ans  # open
 
 
-def _first_missing_index(questions: list):
-    for i, q in enumerate(questions):
+def _needs_image(q: dict) -> bool:
+    """AI rasm kerak deb belgilagan, lekin hali hal qilinmagan (rasm/skip) savol."""
+    return bool(q.get("has_image")) and not q.get("image_decided")
+
+
+def _count_pending(questions: list) -> int:
+    """To'ldirilishi kerak savollar soni (javob yo'q yoki rasm hali hal qilinmagan)."""
+    return sum(1 for q in questions if _is_answer_missing(q) or _needs_image(q))
+
+
+def _next_action(questions: list):
+    """Keyingi to'ldirilishi kerak (savol, amal). amal: 'answer' | 'image'.
+
+    Har savol oldin javobini, keyin (kerak bo'lsa) rasmini oladi — shu sabab
+    bitta savol to'liq tugagach keyingisiga o'tiladi.
+    """
+    for q in questions:
         if _is_answer_missing(q):
-            return i
-    return None
-
-
-def _count_missing(questions: list) -> int:
-    return sum(1 for q in questions if _is_answer_missing(q))
+            return q, "answer"
+        if _needs_image(q):
+            return q, "image"
+    return None, None
 
 
 def _ai_keyboard() -> ReplyKeyboardMarkup:
@@ -182,73 +197,135 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    missing = _count_missing(questions)
-    if missing > 0:
-        action_row = [InlineKeyboardButton(
-            f"✏️ Javoblarni belgilash ({missing} ta)", callback_data="aicreate_answers"
-        )]
-    else:
-        action_row = [InlineKeyboardButton(
-            "✅ Tasdiqlash va yaratish", callback_data="aicreate_confirm"
-        )]
+    total = len(questions)
+    pending = _count_pending(questions)
+    closed = sum(1 for q in questions if q["type"] in ("closed", "closed6"))
+    open_n = sum(1 for q in questions if q["type"] == "open")
+
+    # AI yopiq savol uchun variantlarni topa olmagan bo'lishi mumkin — bu wizard'da
+    # so'ralmaydi (javob bor), shuning uchun bir marta qisqa ogohlantirib qo'yamiz.
+    no_opts = [q["num"] for q in questions
+               if q["type"] in ("closed", "closed6") and not q.get("options")]
+    warn = (f"\n\n⚠️ Variantlari topilmagan savollar: {', '.join(map(str, no_opts))} — "
+            f"yaratilgandan keyin tekshiring." if no_opts else "")
+
+    if pending == 0:
+        # Hammasi tayyor — to'g'ridan-to'g'ri yakuniy tasdiqqa o'tamiz
+        await message.reply_html(
+            f"🔍 <b>AI {total} ta savol topdi</b>  (yopiq: {closed}, ochiq: {open_n})\n"
+            f"Hamma javob aniqlandi, rasm kerak emas.{warn}"
+        )
+        await _show_final_confirm(context, message.chat_id, questions)
+        return FILLING
 
     await message.reply_html(
-        _build_preview(questions, result.warnings),
-        reply_markup=InlineKeyboardMarkup([
-            action_row,
-            [InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")],
-        ]),
+        f"🔍 <b>AI {total} ta savol topdi</b>  (yopiq: {closed}, ochiq: {open_n})\n\n"
+        f"Endi <b>{pending} ta savolni</b> birgalikda to'ldiramiz — har biriga "
+        f"javobini (kerak bo'lsa rasmini ham) belgilab, navbat bilan keyingisiga o'tamiz.{warn}"
     )
-    return PREVIEW_CONFIRM
+    await _prompt_next_action(context, message.chat_id)
+    return FILLING
 
 
-def _build_preview(questions: list, warnings: list) -> str:
+# ──────────────────────── Savol-ma-savol to'ldirish ────────────────────────
+
+def _q_text_short(q: dict, limit: int = 200) -> str:
+    """Savol matnini (LaTeX→o'qiladigan) qisqartirilgan, HTML-escape qilingan ko'rinishi."""
+    text = latex_to_text(q.get("text") or "")
+    if len(text) > limit:
+        text = text[:limit - 1] + "…"
+    return escape(text)
+
+
+async def _prompt_next_action(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Keyingi to'ldirilishi kerak savolni so'rash. Hammasi tugagan bo'lsa None qaytaradi."""
+    questions = context.user_data.get("ai_questions", [])
+    q, action = _next_action(questions)
+    if q is None:
+        return None
+
+    remaining = _count_pending(questions)  # joriy savolni ham hisoblaydi → "qoldi"
+    cancel_btn = InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")
+    head = f"<b>{q['num']}-savol</b>  (qoldi: {remaining})\n\n{_q_text_short(q)}"
+
+    if action == "answer":
+        if q["type"] in ("closed", "closed6"):
+            letters = _answer_letters(q)
+            opts = q.get("options") or {}
+            opt_lines = [
+                f"{l.upper()}) {escape(latex_to_text(str(opts.get(l, ''))))}"
+                for l in letters if opts.get(l)
+            ]
+            body = ("\n\n" + "\n".join(opt_lines)) if opt_lines else ""
+            buttons = [
+                InlineKeyboardButton(l.upper(), callback_data=f"ansset_{q['num']}_{l}")
+                for l in letters
+            ]
+            rows = [buttons[i:i + 4] for i in range(0, len(buttons), 4)]
+            rows.append([cancel_btn])
+            await context.bot.send_message(
+                chat_id,
+                f"✏️ {head}{body}\n\n✅ To'g'ri javobni tanlang:",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        else:
+            await context.bot.send_message(
+                chat_id,
+                f"✏️ {head}\n\n💬 To'g'ri javobni matn ko'rinishida yuboring.\n"
+                f"<i>Agar bu aslida variantli (A–E) savol bo'lsa — pastdagi tugmani bosing.</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔤 Variantli savol (A–E)",
+                                          callback_data=f"aimkclosed_{q['num']}")],
+                    [cancel_btn],
+                ]),
+            )
+    else:  # image
+        await context.bot.send_message(
+            chat_id,
+            f"🖼 {head}\n\n📷 Shu savol uchun <b>rasmni yuboring</b>.\n"
+            f"Agar bu savolda aslida rasm bo'lmasa (AI xato belgilagan bo'lsa) — "
+            f"«🚫 Rasm yo'q» tugmasini bosing.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🚫 Rasm yo'q", callback_data=f"aiskip_{q['num']}")],
+                [cancel_btn],
+            ]),
+        )
+    return action
+
+
+async def _advance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Keyingi amalni so'rash yoki hammasi tugagan bo'lsa yakuniy tasdiqni ko'rsatish."""
+    chat_id = update.effective_chat.id
+    action = await _prompt_next_action(context, chat_id)
+    if action is None:
+        questions = context.user_data.get("ai_questions", [])
+        await _show_final_confirm(context, chat_id, questions)
+    return FILLING
+
+
+async def _show_final_confirm(context: ContextTypes.DEFAULT_TYPE, chat_id: int, questions: list):
+    """To'ldirish tugagach — yakuniy ko'rib chiqish + testni yaratish tugmasi."""
     total = len(questions)
     closed = sum(1 for q in questions if q["type"] in ("closed", "closed6"))
     open_n = sum(1 for q in questions if q["type"] == "open")
-    img_nums = [q["num"] for q in questions if q.get("has_image")]
-
-    missing = _count_missing(questions)
+    img_nums = [q["num"] for q in questions if q.get("image_file_id")]
 
     lines = [
-        "🔍 <b>AI ajratdi — tekshirib tasdiqlang:</b>\n",
+        "✅ <b>Hammasi to'ldirildi — tasdiqlang</b>\n",
         f"❓ Jami: <b>{total}</b> ta savol  (yopiq: {closed}, ochiq: {open_n})",
+        (f"🖼 Rasmli: {', '.join(map(str, img_nums))}-savol(lar)" if img_nums
+         else "🖼 Rasm biriktirilmadi"),
     ]
-    if missing > 0:
-        lines.append(
-            f"⚠️ <b>{missing} ta savolda javob aniqlanmadi</b> — bu hujjatda javoblar "
-            f"kaliti yo'q ko'rinadi. «Javoblarni belgilash» orqali o'zingiz kiritasiz."
-        )
-    if img_nums:
-        lines.append(f"🖼 Rasm kerak: {', '.join(map(str, img_nums))}-savol(lar)")
-    lines.append("")
-
-    shown = questions[:_PREVIEW_MAX_QUESTIONS]
-    for q in shown:
-        ans_raw = str(q.get("answer", "") or "")
-        if q["type"] in ("closed", "closed6"):
-            ans = escape(ans_raw.upper()) if ans_raw else "—"
-        else:
-            ans = escape(latex_to_text(ans_raw)) if ans_raw else "—"
-        img = " 🖼" if q.get("has_image") else ""
-        text = latex_to_text(q.get("text") or "")
-        text = text if len(text) <= 60 else text[:57] + "..."
-        text = escape(text)
-        lines.append(f"<b>{q['num']}.</b> [{q['type']}] → <code>{ans}</code>{img}")
-        if text:
-            lines.append(f"   <i>{text}</i>")
-
-    if total > _PREVIEW_MAX_QUESTIONS:
-        lines.append(f"\n... va yana {total - _PREVIEW_MAX_QUESTIONS} ta savol.")
-
-    if warnings:
-        lines.append("\n⚠️ <b>Diqqat:</b>")
-        for w in warnings[:8]:
-            lines.append(f"  • {escape(w)}")
-        if len(warnings) > 8:
-            lines.append(f"  • ... va yana {len(warnings) - 8} ta.")
-
-    return "\n".join(lines)
+    await context.bot.send_message(
+        chat_id, "\n".join(lines), parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Testni yaratish", callback_data="aicreate_confirm")],
+            [InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")],
+        ]),
+    )
 
 
 # ──────────────────────────── Tasdiqlash ────────────────────────────
@@ -258,6 +335,11 @@ async def _finalize_creation(context: ContextTypes.DEFAULT_TYPE, chat_id: int, u
 
     confirm_callback (javoblar to'liq) va javob-kiritish yakuni — ikkalasi chaqiradi.
     """
+    # Rasm holatini yakuniy haqiqatga keltiramiz: rasm biriktirilgan bo'lsa True;
+    # AI rasm bor degan, lekin egasi «Rasm yo'q» degan savol — False bo'ladi.
+    for q in questions:
+        q["has_image"] = bool(q.get("image_file_id"))
+
     db_user = get_or_create_user(
         telegram_id=user.id,
         username=user.username,
@@ -290,96 +372,40 @@ async def _finalize_creation(context: ContextTypes.DEFAULT_TYPE, chat_id: int, u
         except Exception:
             pass
 
-    await context.bot.send_message(
-        chat_id, f"✅ <b>Test yaratildi!</b>  Kod: <code>{test.id}</code>", parse_mode="HTML"
-    )
-    await start_image_collection(context, chat_id, test)
+    # Rasm allaqachon suhbat ichida yig'ilgan — to'g'ridan-to'g'ri yakunlaymiz.
+    await _finalize(context, chat_id, test)
     return test
 
 
-@membership_required
 async def confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Preview tasdiqlandi (javoblar to'liq) — testni yaratish."""
+    """Yakuniy tasdiq — testni yaratish.
+
+    A'zolik darvozasi kirishda (`file_command`) tekshirilgan; bu yerda
+    @membership_required QO'YILMAYDI — aks holda a'zolik keshi muddati o'tsa
+    yakuniy o'tish None qaytarib, tugma «osilib» qolardi.
+    """
     query = update.callback_query
     await query.answer()
 
-    questions = context.user_data.get("ai_questions")
+    # Re-entrancy himoyasi: tugma ikki marta tez bosilsa dublikat test yaratilmasin.
+    # Savollarni darrov olib (pop) qo'yamiz — ikkinchi bosish bo'sh topadi va to'xtaydi.
+    questions = context.user_data.pop("ai_questions", None)
     if not questions:
-        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        try:
+            await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        except Exception:
+            pass
         return ConversationHandler.END
 
-    await query.message.edit_text("⏳ Test yaratilmoqda...")
-    await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
+    try:
+        await query.message.edit_text("⏳ Test yaratilmoqda...")
+    except Exception:
+        pass
+    await _finalize_creation(context, update.effective_chat.id, update.effective_user, questions)
     return ConversationHandler.END
 
 
-# ─────────────────────── Javob-kiritish (kalitsiz hujjat) ───────────────────────
-
-async def _prompt_next_missing(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-    """Keyingi javobsiz savolni so'rash. Hammasi to'lgan bo'lsa None qaytaradi."""
-    questions = context.user_data.get("ai_questions", [])
-    idx = _first_missing_index(questions)
-    if idx is None:
-        return None
-
-    q = questions[idx]
-    # Qaysi savol so'ralayotganini eslab qolamiz (ochiq javob matni shu savolga yoziladi)
-    context.user_data["answer_pending_num"] = q["num"]
-    remaining = _count_missing(questions)
-    head = (
-        f"✏️ <b>{q['num']}-savol javobini belgilang</b>  (yana {remaining} ta)\n\n"
-        f"{escape(latex_to_text(q.get('text') or ''))}"
-    )
-    cancel_btn = InlineKeyboardButton("❌ Bekor qilish", callback_data="aicreate_cancel")
-
-    if q["type"] in ("closed", "closed6"):
-        letters = _answer_letters(q)
-        opts = q.get("options") or {}
-        opt_lines = [f"{l.upper()}) {escape(latex_to_text(str(opts.get(l, ''))))}" for l in letters]
-        text = head + "\n\n" + "\n".join(opt_lines)
-        # callback'da savol raqami ham bor — javob aynan shu savolga yoziladi
-        buttons = [InlineKeyboardButton(l.upper(), callback_data=f"ansset_{q['num']}_{l}") for l in letters]
-        rows = [buttons[i:i + 4] for i in range(0, len(buttons), 4)]
-        rows.append([cancel_btn])
-        await context.bot.send_message(chat_id, text, parse_mode="HTML",
-                                       reply_markup=InlineKeyboardMarkup(rows))
-    else:
-        await context.bot.send_message(
-            chat_id, head + "\n\n💬 To'g'ri javobni matn ko'rinishida yuboring.",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[cancel_btn]]),
-        )
-    return idx
-
-
-@membership_required
-async def start_answer_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """«Javoblarni belgilash» — javob-kiritishni boshlash."""
-    query = update.callback_query
-    await query.answer()
-
-    questions = context.user_data.get("ai_questions")
-    if not questions:
-        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
-        return ConversationHandler.END
-
-    await query.message.edit_text("✏️ Javoblarni birma-bir belgilaymiz...")
-    idx = await _prompt_next_missing(context, query.message.chat_id)
-    if idx is None:
-        await _finalize_creation(context, query.message.chat_id, update.effective_user, questions)
-        return ConversationHandler.END
-    return ANSWER_ENTRY
-
-
-async def _advance_or_finish(update, context, questions) -> int:
-    """Keyingi javobsiz savolga o'tish yoki hammasi tugagan bo'lsa testni yaratish."""
-    chat_id = update.effective_chat.id
-    if _first_missing_index(questions) is None:
-        await _finalize_creation(context, chat_id, update.effective_user, questions)
-        return ConversationHandler.END
-    await _prompt_next_missing(context, chat_id)
-    return ANSWER_ENTRY
-
+# ─────────────────────── Javob/rasm to'ldirish handlerlari ───────────────────────
 
 async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Yopiq savol javobi tanlandi (inline harf) — aynan callback'dagi savolga yoziladi."""
@@ -387,7 +413,7 @@ async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     parts = query.data.split("_")  # ansset_<num>_<letter>
     if len(parts) != 3 or not parts[1].isdigit():
         await query.answer("Xato", show_alert=True)
-        return ANSWER_ENTRY
+        return FILLING
     num = int(parts[1])
     letter = parts[2]
 
@@ -399,13 +425,21 @@ async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     q = next((x for x in questions if x.get("num") == num), None)
     if q is None:
         await query.answer("Savol topilmadi", show_alert=True)
-        return ANSWER_ENTRY
+        return FILLING
     if q["type"] not in ("closed", "closed6"):
         await query.answer("Bu savol uchun matn yuboring", show_alert=True)
-        return ANSWER_ENTRY
+        return FILLING
     if letter not in _answer_letters(q):
         await query.answer("Noto'g'ri variant", show_alert=True)
-        return ANSWER_ENTRY
+        return FILLING
+    if not _is_answer_missing(q):
+        # Eskirgan/takroriy tugma bosildi — javob allaqachon belgilangan, qayta yozmaymiz
+        await query.answer("Bu savol allaqachon javoblangan")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return FILLING
 
     q["answer"] = letter
     await query.answer(f"{num}: {letter.upper()} ✓")
@@ -414,40 +448,181 @@ async def answer_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception:
         pass
 
-    return await _advance_or_finish(update, context, questions)
+    return await _advance(update, context)
 
 
 async def answer_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ochiq savol javobi matn ko'rinishida kiritildi — so'ralgan savolga yoziladi."""
+    """Matn xabari — ochiq javob yoki 'Ortga'. Joriy amalni _next_action belgilaydi."""
     text = (update.message.text or "").strip()
-    if text.lower() in ("ortga", "❌ bekor qilish"):
-        return await cancel_command(update, context)
 
     questions = context.user_data.get("ai_questions")
     if not questions:
-        await update.message.reply_text("❌ Sessiya tugadi.", reply_markup=main_menu_keyboard(update.effective_user.id))
+        await update.message.reply_text(
+            "❌ Sessiya tugadi.", reply_markup=main_menu_keyboard(update.effective_user.id)
+        )
         return ConversationHandler.END
 
-    # So'ralgan savolni num bo'yicha topamiz (first-missing emas — aniqlik uchun)
-    num = context.user_data.get("answer_pending_num")
-    q = next((x for x in questions if x.get("num") == num), None)
-    if q is None:
-        idx = _first_missing_index(questions)
-        q = questions[idx] if idx is not None else None
-    if q is None:
-        await _finalize_creation(context, update.message.chat_id, update.effective_user, questions)
-        return ConversationHandler.END
+    # Manba — _next_action: hozir aynan nimani kutayotganimizni shu aytadi.
+    q, action = _next_action(questions)
+    is_open_answer = (q is not None and action == "answer"
+                      and q["type"] not in ("closed", "closed6"))
 
+    # 'Ortga'/'Bekor' → bekor qilish, FAQAT ochiq javob kutilmayotgan bo'lsa
+    # (ochiq savol javobi aynan "ortga" bo'lishi mumkin — uni bekor deb hisoblamaymiz;
+    #  bunday paytda bekor qilish uchun /cancel yoki «❌ Bekor qilish» tugmasi bor).
+    if text.lower() in ("ortga", "❌ bekor qilish") and not is_open_answer:
+        return await cancel_command(update, context)
+
+    if q is None:
+        await update.message.reply_text(
+            "✅ Hammasi to'ldirildi — pastdagi «✅ Testni yaratish» tugmasini bosing."
+        )
+        return FILLING
+    if action == "image":
+        await update.message.reply_text(
+            "📷 Hozir rasm kutilmoqda — rasmni yuboring yoki «🚫 Rasm yo'q» tugmasini bosing."
+        )
+        return FILLING
     if q["type"] in ("closed", "closed6"):
         await update.message.reply_text("Bu savol uchun yuqoridagi tugmalardan birini tanlang.")
-        return ANSWER_ENTRY
+        return FILLING
     if not text:
         await update.message.reply_text("Javob bo'sh bo'lmasin.")
-        return ANSWER_ENTRY
+        return FILLING
 
     q["answer"] = text
-    context.user_data.pop("answer_pending_num", None)
-    return await _advance_or_finish(update, context, questions)
+    return await _advance(update, context)
+
+
+async def wizard_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Suhbat ichida rasm — joriy savolga biriktiriladi (image amali kutilganda).
+
+    Oddiy rasm ham, rasm-fayl (Document.IMAGE) ham qabul qilinadi.
+    """
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        return ConversationHandler.END
+
+    q, action = _next_action(questions)
+    if q is None:
+        await update.message.reply_text(
+            "✅ Hammasi to'ldirildi — pastdagi «✅ Testni yaratish» tugmasini bosing."
+        )
+        return FILLING
+    if action != "image":
+        await update.message.reply_text(
+            "ℹ️ Hozir rasm kutilmayapti. Avval so'ralgan javobni kiriting."
+        )
+        return FILLING
+
+    # file_id: oddiy rasm yoki rasm-fayl (mime image/*)
+    file_id = None
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+    elif update.message.document and (update.message.document.mime_type or "").startswith("image/"):
+        file_id = update.message.document.file_id
+    if not file_id:
+        await update.message.reply_text("❌ Iltimos, rasm yuboring.")
+        return FILLING
+
+    q["image_file_id"] = file_id
+    q["image_decided"] = True
+    await update.message.reply_text(f"✅ {q['num']}-savol rasmi qabul qilindi.")
+    return await _advance(update, context)
+
+
+async def wizard_image_skip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """«🚫 Rasm yo'q» — joriy savolda rasm yo'q deb belgilash (AI xatosini tuzatish)."""
+    query = update.callback_query
+    parts = query.data.split("_")  # aiskip_<num>
+    if len(parts) != 2 or not parts[1].isdigit():
+        await query.answer("Xato", show_alert=True)
+        return FILLING
+    num = int(parts[1])
+
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        await query.answer("Sessiya tugadi", show_alert=True)
+        return ConversationHandler.END
+
+    q = next((x for x in questions if x.get("num") == num), None)
+    cur, action = _next_action(questions)
+
+    # Eskirgan/takroriy bosish himoyasi: faqat hozir AYNAN shu savol uchun rasm
+    # kutilayotgan bo'lsa skip qilamiz. Aks holda (rasm allaqachon biriktirilgan yoki
+    # navbat boshqa savolda) tegmaymiz — yuborilgan rasm jim yo'qolib qolmasin.
+    is_current_image = (q is not None and cur is not None
+                        and action == "image" and cur.get("num") == num)
+    if not is_current_image or q.get("image_file_id"):
+        await query.answer("Bu savol allaqachon hal qilingan")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return FILLING
+
+    q["image_decided"] = True
+    q["image_file_id"] = None
+    await query.answer("Rasm o'tkazib yuborildi")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    return await _advance(update, context)
+
+
+async def wizard_make_closed_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """«🔤 Variantli savol» — AI ochiq deb xato qilgan savolni yopiq (A–F) ga o'tkazadi.
+
+    Ko'p ustunli hujjatda variantlar savol matnidan ajralib qolsa, AI uni "open"
+    deb belgilashi mumkin. Bu yerda egasi uni variantli savolga aylantirib, to'g'ri
+    javob harfini tanlaydi (variant matnlari saqlanmaydi — javob harf bo'yicha baholanadi).
+    """
+    query = update.callback_query
+    parts = query.data.split("_")  # aimkclosed_<num>
+    if len(parts) != 2 or not parts[1].isdigit():
+        await query.answer("Xato", show_alert=True)
+        return FILLING
+    num = int(parts[1])
+
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        await query.answer("Sessiya tugadi", show_alert=True)
+        return ConversationHandler.END
+
+    q = next((x for x in questions if x.get("num") == num), None)
+    if q is None:
+        await query.answer("Savol topilmadi", show_alert=True)
+        return FILLING
+
+    q["type"] = "closed6"   # A–F tugmalari ko'rsatiladi (5-6 variantni qoplaydi)
+    q["answer"] = ""        # javob endi harf — qaytadan so'raymiz
+    await query.answer("Variantli savolga o'tkazildi")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    return await _advance(update, context)
+
+
+async def wizard_other_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """FILLING ichidagi qo'llab-quvvatlanmaydigan media (stiker/ovoz/video/h.k.) — yo'l-yo'riq."""
+    questions = context.user_data.get("ai_questions")
+    if not questions:
+        return ConversationHandler.END
+
+    q, action = _next_action(questions)
+    if q is not None and action == "image":
+        await update.message.reply_text(
+            "📷 Rasmni oddiy rasm (yoki rasm-fayl) sifatida yuboring, "
+            "yoki «🚫 Rasm yo'q» tugmasini bosing."
+        )
+    else:
+        await update.message.reply_text(
+            "ℹ️ Bu turdagi xabar qabul qilinmaydi. Javobni tugma yoki matn bilan kiriting."
+        )
+    return FILLING
 
 
 async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,8 +630,14 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data.pop("ai_questions", None)
-    await query.message.edit_text("❌ Bekor qilindi.")
-    await query.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
+    try:
+        await query.message.edit_text("❌ Bekor qilindi.")
+    except Exception:
+        pass
+    await context.bot.send_message(
+        update.effective_chat.id, "🏠 Asosiy menyu:",
+        reply_markup=main_menu_keyboard(update.effective_user.id),
+    )
     return ConversationHandler.END
 
 
@@ -779,17 +960,25 @@ def get_handlers():
                 MessageHandler(filters.StatusUpdate.WEB_APP_DATA, webapp_rich_created_in_conv),
                 MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, _ortga_handler),
             ],
-            PREVIEW_CONFIRM: [
-                CallbackQueryHandler(confirm_callback, pattern=r"^aicreate_confirm$"),
-                CallbackQueryHandler(start_answer_entry, pattern=r"^aicreate_answers$"),
-                CallbackQueryHandler(cancel_callback, pattern=r"^aicreate_cancel$"),
-            ],
-            ANSWER_ENTRY: [
+            FILLING: [
                 CallbackQueryHandler(answer_pick_callback, pattern=r"^ansset_\d+_[a-f]$"),
+                CallbackQueryHandler(wizard_image_skip_callback, pattern=r"^aiskip_\d+$"),
+                CallbackQueryHandler(wizard_make_closed_callback, pattern=r"^aimkclosed_\d+$"),
+                CallbackQueryHandler(confirm_callback, pattern=r"^aicreate_confirm$"),
                 CallbackQueryHandler(cancel_callback, pattern=r"^aicreate_cancel$"),
+                MessageHandler(
+                    (filters.PHOTO | filters.Document.IMAGE) & filters.ChatType.PRIVATE,
+                    wizard_receive_photo,
+                ),
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
                     answer_type_handler,
+                ),
+                # Qolgan media (stiker/ovoz/video/rasm bo'lmagan fayl) — yo'l-yo'riq beramiz
+                # (service xabarlarni emas: ular global routerga o'tsin).
+                MessageHandler(
+                    filters.ChatType.PRIVATE & ~filters.COMMAND & ~filters.StatusUpdate.ALL,
+                    wizard_other_media,
                 ),
             ],
         },

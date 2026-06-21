@@ -116,7 +116,8 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     )
 
     # Sarlavha
-    ws.merge_cells('A1:F1')
+    rasch_mode = test.scoring_mode == "rasch"
+    ws.merge_cells('A1:F1' if rasch_mode else 'A1:E1')
     ws['A1'] = f"📊 Test natijasi — {test.id}"
     ws['A1'].font = title_font
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -135,9 +136,11 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
     # Jadval sarlavhalari
     row = 8
-    rasch_mode = test.scoring_mode == "rasch"
 
-    headers = ["#", "Ism", "To'g'ri", "Jami", "Ball", "Daraja"]
+    if rasch_mode:
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Ball", "Daraja"]
+    else:
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Ball"]
 
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=row, column=col, value=header)
@@ -148,27 +151,30 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
     # Ma'lumotlar
     submissions = stats['submissions']
+    even_fill = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
 
     for i, sub in enumerate(submissions):
         num = i + 1
         r = row + 1 + i
 
-        # Ball: Rash -> normalize, oddiy -> foiz; daraja get_grade bo'yicha
         ball = round(sub.get('rasch_normalized', sub['percentage']) if rasch_mode else sub['percentage'], 1)
-        grade = get_grade(ball)
 
         ws.cell(row=r, column=1, value=num).border = thin_border
         ws.cell(row=r, column=2, value=_clean_text(sub['user'])).border = thin_border
         ws.cell(row=r, column=3, value=sub['correct']).border = thin_border
         ws.cell(row=r, column=4, value=sub['total']).border = thin_border
         ws.cell(row=r, column=5, value=ball).border = thin_border
-        ws.cell(row=r, column=6, value=grade).border = thin_border
-
-        # Daraja bo'yicha rang (barcha testlar uchun)
-        fill = grade_fills.get(grade)
-        if fill:
-            for c in range(1, len(headers) + 1):
-                ws.cell(row=r, column=c).fill = fill
+        if rasch_mode:
+            grade = get_grade(ball)
+            ws.cell(row=r, column=6, value=grade).border = thin_border
+            fill = grade_fills.get(grade)
+            if fill:
+                for c in range(1, len(headers) + 1):
+                    ws.cell(row=r, column=c).fill = fill
+        else:
+            if i % 2 == 1:
+                for c in range(1, len(headers) + 1):
+                    ws.cell(row=r, column=c).fill = even_fill
 
         # Markazlashtirish
         for c in range(1, len(headers) + 1):
@@ -181,7 +187,8 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     ws.column_dimensions['C'].width = 10
     ws.column_dimensions['D'].width = 8
     ws.column_dimensions['E'].width = 10
-    ws.column_dimensions['F'].width = 10
+    if rasch_mode:
+        ws.column_dimensions['F'].width = 10
 
     # Savol statistikasi sahifasi
     if stats.get('question_stats'):
@@ -266,11 +273,15 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
         num = idx + 1
         name = name_fn(sub['user'])
 
-        # Ball: Rash testda normalize qilingan ball, oddiy testda foiz.
-        # Daraja get_grade shkalasi bo'yicha (70+ A+, 65 A, 60 B+, ...).
         ball = round(sub.get('rasch_normalized', sub['percentage']) if rasch_mode else sub['percentage'], 1)
-        grade = get_grade(ball)
-        row_bg = grade_colors.get(grade, '#ffffff')
+
+        if rasch_mode:
+            grade = get_grade(ball)
+            row_bg = grade_colors.get(grade, '#ffffff')
+            grade_cell = f'<td style="{_td_c}font-weight:bold;">{grade}</td>'
+        else:
+            row_bg = '#f5f5f5' if idx % 2 == 1 else '#ffffff'
+            grade_cell = ''
 
         rows_html += f"""
         <tr style="background:{row_bg};">
@@ -279,13 +290,14 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
             <td style="{_td_c}">{sub['correct']}</td>
             <td style="{_td_c}">{sub['total']}</td>
             <td style="{_td_c}">{ball}</td>
-            <td style="{_td_c}font-weight:bold;">{grade}</td>
+            {grade_cell}
         </tr>"""
 
-    # Jadval sarlavhalari — indigo fon, oq matn (inline). Kenglikni LibreOffice
-    # avtomatik hisoblaydi (qo'lda kenglik berish uning joylashuvini buzadi).
     _th = "background:#4f46e5;color:#ffffff;font-weight:bold;text-align:center;"
-    _cols = ["#", "Ism", "To'g'ri", "Jami", "Ball", "Daraja"]
+    if rasch_mode:
+        _cols = ["#", "Ism", "To'g'ri", "Jami", "Ball", "Daraja"]
+    else:
+        _cols = ["#", "Ism", "To'g'ri", "Jami", "Ball"]
     header_cells = "".join(
         f'<th style="{_th}{"text-align:left;" if c == "Ism" else ""}">{c}</th>'
         for c in _cols
@@ -481,10 +493,10 @@ def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
   </tbody>
 </table>
 
-<p style="margin-top:12px;font-size:8.5pt;color:#6b7280;">
+{"" if not rasch_mode else '''<p style="margin-top:12px;font-size:8.5pt;color:#6b7280;">
   <b style="color:#4338ca;">Daraja shkalasi:</b>
   70+ &#8594; A+ &nbsp;&middot;&nbsp; 65&#8211;69.9 &#8594; A &nbsp;&middot;&nbsp; 60&#8211;64.9 &#8594; B+ &nbsp;&middot;&nbsp; 55&#8211;59.9 &#8594; B &nbsp;&middot;&nbsp; 50&#8211;54.9 &#8594; C+ &nbsp;&middot;&nbsp; 46&#8211;49.9 &#8594; C
-</p>
+</p>'''}
 
 </body>
 </html>"""

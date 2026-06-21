@@ -51,15 +51,20 @@ class Test(BaseModel):
 
     @property
     def total_questions(self):
-        """Savollar soni (Oddiy string yoki JSON)"""
-        if self.correct_answers and self.correct_answers.startswith("[{"):
+        """Savollar soni (oddiy string yoki JSON massiv).
+
+        Baholash (utils.check_answers) bilan mos bo'lishi shart: buzilgan JSON'da
+        xom satr uzunligi emas, 0 qaytaramiz; legacy satrda bo'sh joy sanalmaydi.
+        """
+        raw = self.correct_answers or ""
+        if raw.startswith("[{"):
             import json
             try:
-                data = json.loads(self.correct_answers)
-                return len(data)
-            except:
-                pass
-        return len(self.correct_answers)
+                data = json.loads(raw)
+                return len(data) if isinstance(data, list) else 0
+            except (ValueError, TypeError):
+                return 0
+        return len(raw.strip())
 
 
 class TestSubmission(BaseModel):

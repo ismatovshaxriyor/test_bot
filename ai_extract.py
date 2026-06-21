@@ -18,6 +18,7 @@ from typing import List, Optional, Protocol, Union, runtime_checkable
 from pydantic import BaseModel
 
 from config import GEMINI_API_KEY, GEMINI_MODEL
+from utils import repair_latex_escapes
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,15 @@ Qoidalar:
   tayyor javoblar kalitidan olinadi. Kalit bo'lmasa answer bo'sh, answer_from_key=false.
 - Savol matnini o'ylab topma — faqat hujjatda borini ajrat.
 - Variant matnlarini asl tilida saqla.
+- ❗ KO'P USTUNLI JOYLASHUV: hujjat ko'pincha 2 ustunli test bo'ladi va BITTA
+  savolning matni hamda variantlari sahifada AJRALIB ketishi mumkin — masalan savol
+  matni ustun tepasida, davomi ("...teng bo'ladi?") va variantlari (A)... B)... E)...)
+  sahifaning PASTIDA yoki boshqa ustunda joylashgan bo'lishi mumkin. Har bir savolni
+  RAQAMI bo'yicha to'liq yig': o'sha raqamga tegishli barcha bo'laklarni (matn davomi
+  + variantlar) jismonan uzoqda bo'lsa ham birlashtir.
+- Bu testlarning DEYARLI HAMMASI variantli (A-E/A-F). Variantni darrov ko'rmasang,
+  sahifaning boshqa joyidan (pastdan, qarama-qarshi ustundan) SHU RAQAM uchun izla.
+  "open" ni FAQAT haqiqatan ham hech qayerda varianti yo'q savolga ishlat.
 
 Natijani qat'iy JSON sxema bo'yicha qaytar."""
 
@@ -314,7 +324,7 @@ def _coerce_options(raw_options) -> Optional[dict]:
     for label, value in items:
         key = str(label or "").strip().lower()
         if key:
-            result[key] = str(value or "").strip()
+            result[key] = repair_latex_escapes(str(value or "").strip())
     return result or None
 
 
@@ -388,9 +398,9 @@ def normalize_extracted(raw_questions: list) -> ExtractionResult:
         result.questions.append(ExtractedQuestion(
             num=idx,
             type=q_type,
-            text=str(q.get("text", "")).strip(),
+            text=repair_latex_escapes(str(q.get("text", "")).strip()),
             options=options,
-            answer=answer,
+            answer=repair_latex_escapes(answer),  # closed: harf (o'zgarmaydi); open: matn
             has_image=bool(q.get("has_image", False)),
         ))
 

@@ -38,6 +38,29 @@ def _to_sub(s: str) -> str:
     return f"_({s})" if len(s) > 1 else f"_{s}"
 
 
+def repair_latex_escapes(text: str) -> str:
+    r"""Model JSON ichida LaTeX buyrug'ini bitta '\' bilan yozganida buzilgan
+    boshqaruv belgilarini tiklaydi.
+
+    JSON'da '\f','\b','\v','\t','\r','\n' — escape ketma-ketliklari. Model
+    "$\frac{x}{y}$" deb yozsa, '\f' form-feed (0x0C) ga aylanib "$<FF>rac{x}{y}$"
+    bo'lib qoladi (ko'rsatishda "racxy"). Buni backslash+harf ko'rinishiga
+    qaytaramiz, shunda LaTeX qayta o'qiladi.
+    """
+    if not text:
+        return text
+    # FF/BS/VT — matnda hech qachon qonuniy emas → har doim tiklash xavfsiz
+    text = text.replace("\x0c", "\\f").replace("\x08", "\\b").replace("\x0b", "\\v")
+    # TAB/CR/NL — faqat formula ($...$) ichida tiklaymiz; matndagi haqiqiy
+    # yangi qator/tab daxlsiz qoladi.
+    if "$" in text and ("\t" in text or "\r" in text or "\n" in text):
+        def _fix(m):
+            return (m.group(0).replace("\t", "\\t")
+                    .replace("\r", "\\r").replace("\n", "\\n"))
+        text = re.sub(r"\$[^$]*\$", _fix, text)
+    return text
+
+
 def _convert_math(expr: str) -> str:
     """Bitta LaTeX ifodani o'qiladigan Unicode matnga aylantirish (chat uchun)."""
     s = expr
@@ -45,10 +68,17 @@ def _convert_math(expr: str) -> str:
     s = re.sub(r"\^\s*\{?\s*\\(?:circ|degree)\s*\}?", "°", s)
     # Aralash son: 3\frac{a}{b} -> 3 a/b (raqamdan keyin bo'shliq)
     s = re.sub(r"(\d)\s*\\[dt]?frac", r"\1 \\frac", s)
-    # \frac{a}{b} -> a/b (bir necha marta — ichma-ich uchun)
+    # \frac{a}{b} -> (a)/(b) (operator bo'lsa qavs; ichma-ich uchun bir necha marta)
     frac_re = re.compile(r"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+
+    def _frac(m):
+        def wrap(p):
+            p = p.strip()
+            return f"({p})" if re.search(r"[+\-*/^]", p) else p
+        return f"{wrap(m.group(1))}/{wrap(m.group(2))}"
+
     for _ in range(5):
-        new = frac_re.sub(r"\1/\2", s)
+        new = frac_re.sub(_frac, s)
         if new == s:
             break
         s = new
@@ -77,7 +107,10 @@ def latex_to_text(text: str) -> str:
     WebApp formulalarni to'liq render qiladi; bu esa bot xabarlarida (preview,
     javob-kiritish) formulalar o'qiladigan ko'rinishda chiqishi uchun.
     """
-    if not text or "$" not in text:
+    if not text:
+        return text
+    text = repair_latex_escapes(text)
+    if "$" not in text:
         return text
     return re.sub(r"\$([^$]+)\$", lambda m: _convert_math(m.group(1)), text)
 
@@ -114,7 +147,9 @@ def parse_simple_answers(text: str) -> Tuple[Optional[str], Optional[str]]:
         # (ya'ni "1a2b3c" → to'liq parse, "abc1d" → klassik formatga o'tamiz)
         rebuilt = re.sub(r'[\s\-\.]+', '', raw)          # bo'shliq/ajratuvchilarni olib tashlab
         covered = re.sub(r'\d+[a-d]', '', rebuilt)       # har bir token ni olib tashlash
-        leftover = re.sub(r'[^a-d\d]', '', covered)      # faqat harf va raqam qolganlarini sanash
+        # Tokenlardan keyin qolgan HAR QANDAY belgi (masalan kutilmagan 'e','x' yoki yetim raqam)
+        # bu sof raqamli format emasligini bildiradi — jim o'chirmay, klassik formatga o'tamiz.
+        leftover = covered
 
         # Agar qolgan belgi bo'lmasa → bu sof raqamli format
         if not leftover:
@@ -314,9 +349,38 @@ def _extract_submitted_answers(
     return answers
 
 
+def _expand_open2(correct_answers, submitted_answers, question_types):
+    """Open2 savollarni a va b qismlariga ajratib, har birini alohida item qiladi.
+
+    Natijada correct, submitted, types ro'yxatlari uzayadi — open2 o'rniga
+    ikkita alohida element qo'yiladi. Boshqa turlar o'zgarmaydi.
+    """
+    exp_correct = []
+    exp_submitted = []
+    exp_types = []
+    for i in range(len(correct_answers)):
+        q_type = question_types[i] if i < len(question_types) else "closed"
+        if q_type == "open2":
+            ca, cb = _split_open2_token(correct_answers[i])
+            sa, sb = _split_open2_token(submitted_answers[i])
+            exp_correct.append(ca)
+            exp_correct.append(cb)
+            exp_submitted.append(sa)
+            exp_submitted.append(sb)
+            exp_types.append("open2_a")
+            exp_types.append("open2_b")
+        else:
+            exp_correct.append(correct_answers[i])
+            exp_submitted.append(submitted_answers[i])
+            exp_types.append(q_type)
+    return exp_correct, exp_submitted, exp_types
+
+
 def check_answers(correct: str, submitted: str) -> Tuple[int, int, List[bool]]:
     """
     Javoblarni tekshirish
+
+    Open2 savollar a va b qismlariga ajratiladi — har biri alohida ball beradi.
 
     Returns:
         (to'g'ri_soni, umumiy_soni, har_bir_savol_natijasi)
@@ -331,25 +395,29 @@ def check_answers(correct: str, submitted: str) -> Tuple[int, int, List[bool]]:
 
     submitted_answers = _extract_submitted_answers(submitted, total, is_mixed, question_types)
 
+    exp_correct, exp_submitted, _ = _expand_open2(correct_answers, submitted_answers, question_types)
+
     results = []
     correct_count = 0
-    for i in range(total):
-        is_correct = bool(correct_answers[i]) and correct_answers[i] == submitted_answers[i]
+    for i in range(len(exp_correct)):
+        is_correct = bool(exp_correct[i]) and exp_correct[i] == exp_submitted[i]
         if is_correct:
             correct_count += 1
         results.append(is_correct)
 
-    return correct_count, total, results
+    return correct_count, len(exp_correct), results
 
 
 def get_answer_review(correct: str, submitted: str) -> List[Dict]:
     """
     Har bir savol bo'yicha tekshiruv natijasini qaytaradi.
 
+    Open2 savollar a va b qismlariga ajratiladi — har biri alohida ko'rsatiladi.
+
     Returns:
         [
             {
-                'index': int,
+                'index': str,
                 'type': str,
                 'is_correct': bool,
                 'submitted_display': str,
@@ -368,34 +436,43 @@ def get_answer_review(correct: str, submitted: str) -> List[Dict]:
     submitted_answers = _extract_submitted_answers(submitted, total, is_mixed, question_types)
 
     def to_display(q_type: str, value: str) -> str:
-        if q_type == "open2":
-            a, b = _split_open2_token(value)
-            a_text = a if a else "—"
-            b_text = b if b else "—"
-            return f"a: {a_text}, b: {b_text}"
-
         if not value:
             return "—"
-
         if q_type in {"closed", "closed4", "closed6"}:
             return value.upper()
-
-        return value
+        return latex_to_text(value)
 
     review = []
+    question_num = 0
     for i in range(total):
         q_type = question_types[i] if i < len(question_types) else "closed"
-        correct_value = correct_answers[i]
-        submitted_value = submitted_answers[i]
-        is_correct = bool(correct_value) and correct_value == submitted_value
+        question_num += 1
 
-        review.append({
-            "index": i + 1,
-            "type": q_type,
-            "is_correct": is_correct,
-            "submitted_display": to_display(q_type, submitted_value),
-            "correct_display": to_display(q_type, correct_value),
-        })
+        if q_type == "open2":
+            ca, cb = _split_open2_token(correct_answers[i])
+            sa, sb = _split_open2_token(submitted_answers[i])
+            review.append({
+                "index": f"{question_num}a",
+                "type": "open2_a",
+                "is_correct": bool(ca) and ca == sa,
+                "submitted_display": to_display("open", sa),
+                "correct_display": to_display("open", ca),
+            })
+            review.append({
+                "index": f"{question_num}b",
+                "type": "open2_b",
+                "is_correct": bool(cb) and cb == sb,
+                "submitted_display": to_display("open", sb),
+                "correct_display": to_display("open", cb),
+            })
+        else:
+            review.append({
+                "index": str(question_num),
+                "type": q_type,
+                "is_correct": bool(correct_answers[i]) and correct_answers[i] == submitted_answers[i],
+                "submitted_display": to_display(q_type, submitted_answers[i]),
+                "correct_display": to_display(q_type, correct_answers[i]),
+            })
 
     return review
 
@@ -489,8 +566,9 @@ def _fit_rasch_jmle(
         # Farq (theta - beta) saqlanishi uchun ikkalasidan ham bir xil qiymat ayriladi.
         center = sum(betas) / num_items
         if abs(center) > 1e-12:
-            betas = [b - center for b in betas]
-            thetas = [t - center for t in thetas]
+            # Centering'dan keyin ham ±6 chegarada qolsin (raw logit ko'rsatkichi oshib ketmasin)
+            betas = [max(min(b - center, 6.0), -6.0) for b in betas]
+            thetas = [max(min(t - center, 6.0), -6.0) for t in thetas]
 
         if max_change < tol:
             converged = True
@@ -520,22 +598,27 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
 
     correct_answers = _extract_correct_answers(test.correct_answers)
     question_types = _extract_question_types(test.correct_answers)
-    total_questions = len(correct_answers)
-    total_subs = len(submissions)
+    raw_total = len(correct_answers)
     is_mixed = _is_mixed_answers(test.correct_answers)
 
-    if total_questions == 0:
+    if raw_total == 0:
         return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
 
     # Javoblar matritsasini tuzish (1 = to'g'ri, 0 = noto'g'ri)
+    # Open2 savollar a/b ga ajratiladi — har biri alohida item
     response_matrix = []
     for sub in submissions:
-        submitted_answers = _extract_submitted_answers(sub.answers, total_questions, is_mixed, question_types)
+        submitted_answers = _extract_submitted_answers(sub.answers, raw_total, is_mixed, question_types)
+        exp_correct, exp_submitted, _ = _expand_open2(correct_answers, submitted_answers, question_types)
         row = [
-            1 if correct_answers[i] and correct_answers[i] == submitted_answers[i] else 0
-            for i in range(total_questions)
+            1 if exp_correct[i] and exp_correct[i] == exp_submitted[i] else 0
+            for i in range(len(exp_correct))
         ]
         response_matrix.append(row)
+
+    total_questions = len(response_matrix[0]) if response_matrix else 0
+    if total_questions == 0:
+        return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
 
     person_thetas, item_difficulties, converged = _fit_rasch_jmle(response_matrix)
     if not person_thetas or not item_difficulties:
@@ -613,10 +696,10 @@ def get_question_stats(test: Test) -> Dict:
 
     correct_answers = _extract_correct_answers(test.correct_answers)
     question_types = _extract_question_types(test.correct_answers)
-    total_questions = len(correct_answers)
+    raw_total = len(correct_answers)
     is_mixed = _is_mixed_answers(test.correct_answers)
 
-    if total_questions == 0:
+    if raw_total == 0:
         return {
             'total_submissions': len(submissions),
             'question_stats': [],
@@ -626,13 +709,28 @@ def get_question_stats(test: Test) -> Dict:
             'rasch': {'rasch_available': False}
         }
 
-    # Har bir savol uchun to'g'ri javoblar soni
+    # Expanded labels: open2 -> "36a","36b"; boshqalar -> "1","2",...
+    exp_labels = []
+    qnum = 0
+    for i in range(raw_total):
+        qnum += 1
+        q_type = question_types[i] if i < len(question_types) else "closed"
+        if q_type == "open2":
+            exp_labels.append(f"{qnum}a")
+            exp_labels.append(f"{qnum}b")
+        else:
+            exp_labels.append(str(qnum))
+
+    total_questions = len(exp_labels)
+
+    # Har bir savol uchun to'g'ri javoblar soni (expanded)
     question_correct = [0] * total_questions
 
     for sub in submissions:
-        submitted_answers = _extract_submitted_answers(sub.answers, total_questions, is_mixed, question_types)
+        submitted_answers = _extract_submitted_answers(sub.answers, raw_total, is_mixed, question_types)
+        exp_correct, exp_submitted, _ = _expand_open2(correct_answers, submitted_answers, question_types)
         for i in range(total_questions):
-            if correct_answers[i] and correct_answers[i] == submitted_answers[i]:
+            if exp_correct[i] and exp_correct[i] == exp_submitted[i]:
                 question_correct[i] += 1
 
     total_subs = len(submissions)
@@ -642,14 +740,16 @@ def get_question_stats(test: Test) -> Dict:
     for i, correct in enumerate(question_correct):
         percentage = round((correct / total_subs) * 100, 1) if total_subs > 0 else 0
         question_stats.append({
-            'index': i + 1,
+            'index': exp_labels[i],
             'correct_count': correct,
             'percentage': percentage
         })
 
     # Eng oson va eng qiyin savollar
-    easiest = max(range(total_questions), key=lambda i: question_correct[i]) + 1
-    hardest = min(range(total_questions), key=lambda i: question_correct[i]) + 1
+    easiest_idx = max(range(total_questions), key=lambda i: question_correct[i])
+    hardest_idx = min(range(total_questions), key=lambda i: question_correct[i])
+    easiest = exp_labels[easiest_idx]
+    hardest = exp_labels[hardest_idx]
 
     # Rash modeli
     rasch = calculate_rasch_scores(test, submissions)
@@ -673,7 +773,9 @@ def get_question_stats(test: Test) -> Dict:
         'total_submissions': total_subs,
         'question_stats': question_stats,
         'easiest': easiest,
+        'easiest_pct': question_stats[easiest_idx]['percentage'],
         'hardest': hardest,
+        'hardest_pct': question_stats[hardest_idx]['percentage'],
         'submissions': user_results,
         'rasch': rasch
     }
@@ -725,12 +827,10 @@ def format_stats(stats: Dict, test: Test) -> str:
 
     # Eng oson va qiyin savollar
     if stats['easiest']:
-        easiest_stat = stats['question_stats'][stats['easiest'] - 1]
-        text += f"✅ Eng oson savol: #{stats['easiest']} ({easiest_stat['percentage']}% to'g'ri)\n"
+        text += f"✅ Eng oson savol: #{stats['easiest']} ({stats['easiest_pct']}% to'g'ri)\n"
 
     if stats['hardest']:
-        hardest_stat = stats['question_stats'][stats['hardest'] - 1]
-        text += f"❌ Eng qiyin savol: #{stats['hardest']} ({hardest_stat['percentage']}% to'g'ri)\n"
+        text += f"❌ Eng qiyin savol: #{stats['hardest']} ({stats['hardest_pct']}% to'g'ri)\n"
 
     text += "\n📥 <i>Natijalarni yuklab olish uchun pastdagi tugmalarni bosing</i>\n"
 
@@ -750,12 +850,10 @@ def format_stats_simple(stats: Dict, test: Test) -> str:
 
     # Eng oson va qiyin savollar
     if stats['easiest']:
-        easiest_stat = stats['question_stats'][stats['easiest'] - 1]
-        text += f"✅ Eng oson savol: #{stats['easiest']} ({easiest_stat['percentage']}% to'g'ri)\n"
+        text += f"✅ Eng oson savol: #{stats['easiest']} ({stats['easiest_pct']}% to'g'ri)\n"
 
     if stats['hardest']:
-        hardest_stat = stats['question_stats'][stats['hardest'] - 1]
-        text += f"❌ Eng qiyin savol: #{stats['hardest']} ({hardest_stat['percentage']}% to'g'ri)\n"
+        text += f"❌ Eng qiyin savol: #{stats['hardest']} ({stats['hardest_pct']}% to'g'ri)\n"
 
     text += "\n📥 <i>Natijalarni yuklab olish uchun pastdagi tugmalarni bosing</i>\n"
 

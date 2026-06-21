@@ -288,15 +288,14 @@ async def delete_channel_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
-    channel_id = int(query.data.replace("del_channel_", ""))
-
     try:
+        channel_id = int(query.data.replace("del_channel_", ""))
         channel = Channel.get_by_id(channel_id)
         channel.is_active = False
         channel.save()
 
         await query.answer(f"✅ {channel.title} o'chirildi!", show_alert=True)
-    except Channel.DoesNotExist:
+    except (ValueError, Channel.DoesNotExist):
         await query.answer("❌ Kanal topilmadi!", show_alert=True)
 
     # Ro'yxatni yangilash
@@ -413,7 +412,11 @@ async def admin_watch_toggle_callback(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     admin_user_id = update.effective_user.id
 
-    test_id = int(query.data.replace("watch_test_", ""))
+    try:
+        test_id = int(query.data.replace("watch_test_", ""))
+    except ValueError:
+        await query.answer("❌ Noto'g'ri ma'lumot.", show_alert=True)
+        return
 
     try:
         admin_db = User.get(User.telegram_id == admin_user_id)
@@ -700,9 +703,8 @@ async def delete_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer("❌ Faqat asosiy admin o'chira oladi!", show_alert=True)
         return
 
-    admin_db_id = int(query.data.replace("del_admin_", ""))
-
     try:
+        admin_db_id = int(query.data.replace("del_admin_", ""))
         admin = User.get_by_id(admin_db_id)
         admin.is_admin = False
         admin.save()
@@ -718,11 +720,59 @@ async def delete_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
 
-    except User.DoesNotExist:
+    except (ValueError, User.DoesNotExist):
         await query.answer("❌ Admin topilmadi!", show_alert=True)
 
     # Ro'yxatni yangilash
     await list_admins_callback(update, context)
+
+
+@admin_only
+async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/whois <id> — ID'ni bosiladigan Telegram mention'iga aylantiradi.
+
+    `<a href="tg://user?id=...">` havolasini bosganda Telegram o'sha foydalanuvchi
+    profilini ochadi (mijoz ID'ni hal qila olsa). Bot o'sha odamni ilgari ko'rgan
+    bo'lsa, ism/username ham qo'shiladi.
+    """
+    args = context.args
+    if not args or not args[0].lstrip("-").isdigit():
+        await update.message.reply_text(
+            "Foydalanish: /whois <telegram_id>\nMasalan: /whois 123456789"
+        )
+        return
+
+    uid = int(args[0])
+    lines = [
+        f"🆔 <code>{uid}</code>",
+        "",
+        f'<a href="tg://user?id={uid}">👤 Profilni ochish</a>  '
+        f'(havolani bosing — profil ochiladi)',
+    ]
+
+    # Bizning bazada bormi?
+    try:
+        u = User.get(User.telegram_id == uid)
+        uname = f"@{u.username}" if u.username else "—"
+        lines += ["", "📂 <b>Botda mavjud:</b>",
+                  f"• Ism: {escape(u.full_name or '—')}",
+                  f"• Username: {escape(uname)}"]
+    except User.DoesNotExist:
+        pass
+
+    # Telegram'dan (bot bu chatni ko'ra olsa — odam botga yozgan bo'lsa)
+    try:
+        chat = await context.bot.get_chat(uid)
+        nm = " ".join(filter(None, [chat.first_name, chat.last_name])) or "—"
+        cu = f"@{chat.username}" if chat.username else "—"
+        lines += ["", "🌐 <b>Telegram:</b>",
+                  f"• Ism: {escape(nm)}",
+                  f"• Username: {escape(cu)}"]
+    except TelegramError:
+        lines += ["", "ℹ️ Bot bu foydalanuvchini to'g'ridan-to'g'ri ko'ra olmadi "
+                  "(u botga yozmagan bo'lishi mumkin) — havolani bosib ko'ring."]
+
+    await update.message.reply_html("\n".join(lines), disable_web_page_preview=True)
 
 
 def get_handlers():
@@ -752,6 +802,7 @@ def get_handlers():
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
         CommandHandler("broadcast", broadcast_command, filters=filters.ChatType.PRIVATE),
+        CommandHandler("whois", whois_command, filters=filters.ChatType.PRIVATE),
         add_channel_conv,
         add_admin_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),

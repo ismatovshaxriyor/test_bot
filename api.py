@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import urllib.request
+from collections import OrderedDict
 from dataclasses import asdict
 from typing import Optional
 from urllib.parse import parse_qsl, quote
@@ -24,6 +25,12 @@ from database import Question, Test, TestSubmission, User, get_or_create_user, i
 
 # initData imzosining maksimal yaroqlilik muddati (sekundlarda)
 INIT_DATA_MAX_AGE = 24 * 60 * 60  # 24 soat
+
+# Savol rasmlari uchun kichik LRU xotira keshi: file_id -> (content, content_type).
+# <img> tegi Authorization yubora olmaydi, shuning uchun endpoint ochiq qoladi; lekin
+# kesh qayta/takror so'rovlarda Telegram API'ga chiqishni keskin kamaytiradi (quota/amplifikatsiya himoyasi).
+_IMAGE_CACHE = OrderedDict()
+_IMAGE_CACHE_MAX = 128
 
 
 init_db()
@@ -458,6 +465,17 @@ def get_question_image(test_id: int, num: int):
     if not BOT_TOKEN:
         raise HTTPException(status_code=503, detail="Server sozlanmagan.")
 
+    # Keshda bo'lsa — Telegram'ga chiqmaymiz
+    cached = _IMAGE_CACHE.get(q.image_file_id)
+    if cached is not None:
+        _IMAGE_CACHE.move_to_end(q.image_file_id)
+        content, ctype = cached
+        return Response(
+            content=content,
+            media_type=ctype,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
     try:
         meta_url = (
             f"https://api.telegram.org/bot{BOT_TOKEN}/getFile"
@@ -476,6 +494,12 @@ def get_question_image(test_id: int, num: int):
     except Exception as exc:
         logger.exception("get_question_image: rasmni olishda xatolik")
         raise HTTPException(status_code=502, detail="Rasmni olishda xatolik.") from exc
+
+    # Keshga qo'yamiz (LRU: eng eski yozuvni chiqaramiz)
+    _IMAGE_CACHE[q.image_file_id] = (content, ctype)
+    _IMAGE_CACHE.move_to_end(q.image_file_id)
+    if len(_IMAGE_CACHE) > _IMAGE_CACHE_MAX:
+        _IMAGE_CACHE.popitem(last=False)
 
     return Response(
         content=content,
