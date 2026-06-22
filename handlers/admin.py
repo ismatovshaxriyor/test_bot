@@ -712,9 +712,23 @@ async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt_chat_id = context.user_data.pop("broadcast_prompt_chat_id", None)
     prompt_message_id = context.user_data.pop("broadcast_prompt_message_id", None)
 
+    chat_id = update.effective_chat.id
+
+    # Foydalanuvchi yuborgan /cancel xabarini o'chiramiz (private chatda bot
+    # kiruvchi xabarni o'chira oladi) — chat toza qolsin.
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
     edited = await _edit_message_to_panel(context, prompt_chat_id, prompt_message_id)
     if not edited:
-        await update.message.reply_html(_admin_panel_text(), reply_markup=admin_keyboard())
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=_admin_panel_text(),
+            parse_mode="HTML",
+            reply_markup=admin_keyboard(),
+        )
     return ConversationHandler.END
 
 
