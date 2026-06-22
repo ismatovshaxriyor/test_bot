@@ -117,18 +117,18 @@ async def choose_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if mode == "rasch":
         keyboard = ReplyKeyboardMarkup([
-            [KeyboardButton("📐 Rash test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))],
+            [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))],
             [KeyboardButton("Ortga")]
         ], resize_keyboard=True)
 
         await query.message.reply_html(
             "📐 <b>Rash test yaratish</b>\n\n"
-            "Pastdagi tugmani bosib WebApp orqali yarating.",
+            "Pastdagi «📲 Ilova» tugmasini bosib yarating.",
             reply_markup=keyboard
         )
     else:
         keyboard = ReplyKeyboardMarkup([
-            [KeyboardButton("🚀 Oddiy test", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))],
+            [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))],
             [KeyboardButton("Ortga")]
         ], resize_keyboard=True)
 
@@ -141,7 +141,7 @@ async def choose_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "   <code>1a2a3b4c5a6b</code>\n"
             "   <code>1-a 2-a 3-b 4-c</code>\n\n"
             "📌 Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n"
-            "📌 Yoki pastdagi tugma orqali WebApp'da yarating.\n\n"
+            "📌 Yoki pastdagi «📲 Ilova» tugmasi orqali yarating.\n\n"
             "❌ Bekor qilish: /cancel yoki Ortga",
             reply_markup=keyboard
         )

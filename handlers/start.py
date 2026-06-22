@@ -16,13 +16,13 @@ HELP_TEXT = """
 1. "📝 Test yaratish" tugmasini bosing
 2. Variantlarni kiriting (masalan: <code>aabbccdd...</code>)
 3. Bot test kodini yuboradi
-4. Pastdagi "🚀 Kengaytirilgan yaratish" tugmasi bilan WebAppga o'ting
+4. Pastdagi "🚀 Kengaytirilgan yaratish" tugmasi bilan ilovaga o'ting
 
 <b>✍️ Test yechish:</b>
 1. "✍️ Test yechish" tugmasini bosing
 2. Test kodini kiriting
 3. Oddiy test bo'lsa, javob qatorini yuboring
-4. Pastdagi "🚀 Kengaytirilgan yechish" tugmasi bilan WebAppga o'ting
+4. Pastdagi "🚀 Kengaytirilgan yechish" tugmasi bilan ilovaga o'ting
 
 <b>📋 Mening testlarim:</b>
 O'zingiz yaratgan testlarni ko'rish va boshqarish

@@ -168,7 +168,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"📝 <b>Test: {code}</b>\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"Ikki usuldan birini tanlang:\n"
-            f"• <b>🚀 Interaktiv yechish</b> — WebApp (formulalar chiroyli ko'rinadi)\n"
+            f"• <b>🚀 Interaktiv yechish</b> — ilova (formulalar chiroyli ko'rinadi)\n"
             f"• <b>{CHAT_SOLVE_BTN}</b> — savollar shu chatda birma-bir ko'rsatiladi\n\n"
             f"❌ Bekor qilish: /cancel yoki Ortga",
             reply_markup=keyboard
@@ -177,7 +177,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await update.message.reply_html(
             f"📝 <b>Test: {code}</b>\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
-            f"⚠️ Bu testda ochiq savollar bor — uni faqat WebApp orqali yechish mumkin.\n"
+            f"⚠️ Bu testda ochiq savollar bor — uni faqat ilova orqali yechish mumkin.\n"
             f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
             f"❌ Bekor qilish: /cancel yoki Ortga",
             reply_markup=keyboard
@@ -189,7 +189,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"Javoblaringizni ikki usuldan birida kiriting:\n"
             f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
             f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
-            f"Yoki pastdagi maxsus tugma orqali WebApp da ishlashingiz mumkin\n\n"
+            f"Yoki pastdagi maxsus tugma orqali ilovada ishlashingiz mumkin\n\n"
             f"❌ Bekor qilish: /cancel yoki Ortga",
             reply_markup=keyboard
         )
@@ -309,7 +309,7 @@ async def start_chat_solving(update: Update, context: ContextTypes.DEFAULT_TYPE)
     rows = list(Question.select().where(Question.test == test).order_by(Question.num))
     if not rows:
         await update.message.reply_text(
-            "Bu testda chatda ko'rsatish uchun mazmun yo'q. WebApp'dan foydalaning."
+            "Bu testda chatda ko'rsatish uchun mazmun yo'q. Ilovadan foydalaning."
         )
         return WAITING_USER_ANSWERS
 
