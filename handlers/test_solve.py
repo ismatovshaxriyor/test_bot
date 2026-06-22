@@ -69,13 +69,16 @@ async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yechishni boshlash"""
     # Argumentdan kodni olish
     if not context.args:
+        # Bosh menyu yashiriladi: faqat "Ortga" qoladi, shunda bo'lim ichida
+        # boshqa menyu tugmasini bosib adashilmaydi.
         await update.message.reply_html(
             "✍️ <b>Test yechish</b>\n\n"
             "Hozir siz oddiy test yechish holatidasiz.\n\n"
             "Test egasi sizga yuborgan <b>test raqamini (ID)</b> kiriting:\n\n"
             "💡 Kod faqat raqamlardan iborat\n"
             "(masalan: <code>15</code> yoki <code>42</code>)\n\n"
-            "❌ Bekor qilish: /cancel yoki Ortga"
+            "❌ Bekor qilish: /cancel yoki Ortga",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Ortga")]], resize_keyboard=True)
         )
         return WAITING_TEST_CODE
 

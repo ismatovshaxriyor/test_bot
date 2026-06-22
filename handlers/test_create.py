@@ -86,53 +86,51 @@ def _normalize_rasch_questions(questions: list) -> list:
 
 @membership_required
 async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Test yaratish — avval turini tanlash"""
-    inline_keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📊 Oddiy test", callback_data="create_mode_simple"),
-            InlineKeyboardButton("📐 Rash test", callback_data="create_mode_rasch"),
-        ]
-    ])
+    """Test yaratish — avval turini tanlash.
+
+    Bosh menyu yashiriladi: o'rniga faqat tur-tanlash tugmalari ko'rsatiladi,
+    shunda foydalanuvchi bo'lim ichida adashib boshqa menyu tugmasini bosmaydi.
+    """
+    keyboard = ReplyKeyboardMarkup([
+        [KeyboardButton("📊 Oddiy test"), KeyboardButton("📐 Rash test")],
+        [KeyboardButton("Ortga")],
+    ], resize_keyboard=True)
 
     await update.message.reply_html(
         "📝 <b>Test yaratish</b>\n\n"
         "Qaysi turdagi test yaratmoqchisiz?",
-        reply_markup=inline_keyboard
+        reply_markup=keyboard
     )
     return CHOOSING_MODE
 
 
-async def choose_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Inline tugma orqali test turini tanlash"""
-    query = update.callback_query
-    await query.answer()
+async def choose_mode_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """CHOOSING_MODE — test turini reply tugma matni orqali tanlash."""
+    text = (update.message.text or "").strip()
 
-    mode = query.data.replace("create_mode_", "")
+    if text.lower() in ("ortga", "❌ bekor qilish"):
+        return await cancel_command(update, context)
 
-    # Inline tugmalarni olib tashlash (qayta bosish mumkin emas)
-    try:
-        await query.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-
-    if mode == "rasch":
+    if text == "📐 Rash test":
         keyboard = ReplyKeyboardMarkup([
             [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))],
             [KeyboardButton("Ortga")]
         ], resize_keyboard=True)
 
-        await query.message.reply_html(
+        await update.message.reply_html(
             "📐 <b>Rash test yaratish</b>\n\n"
             "Pastdagi «📲 Ilova» tugmasini bosib yarating.",
             reply_markup=keyboard
         )
-    else:
+        return WAITING_ANSWERS
+
+    if text == "📊 Oddiy test":
         keyboard = ReplyKeyboardMarkup([
             [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))],
             [KeyboardButton("Ortga")]
         ], resize_keyboard=True)
 
-        await query.message.reply_html(
+        await update.message.reply_html(
             "📊 <b>Oddiy test yaratish</b>\n\n"
             "To'g'ri javoblarni quyidagi ikki usuldan birida yuboring:\n\n"
             "1️⃣ <b>Klassik usul</b> — harflarni ketma-ket yozing:\n"
@@ -145,15 +143,8 @@ async def choose_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "❌ Bekor qilish: /cancel yoki Ortga",
             reply_markup=keyboard
         )
+        return WAITING_ANSWERS
 
-    return WAITING_ANSWERS
-
-
-async def choosing_mode_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """CHOOSING_MODE da matn kelsa — Ortga yoki noto'g'ri kiritish"""
-    raw = update.message.text.strip()
-    if raw.lower() == "ortga":
-        return await cancel_command(update, context)
     await update.message.reply_html("Yuqoridagi tugmalardan birini tanlang.")
     return CHOOSING_MODE
 
@@ -401,10 +392,9 @@ def get_handlers():
         ],
         states={
             CHOOSING_MODE: [
-                CallbackQueryHandler(choose_mode_callback, pattern=r"^create_mode_(simple|rasch)$"),
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
-                    choosing_mode_text
+                    choose_mode_handler
                 ),
             ],
             WAITING_ANSWERS: [
