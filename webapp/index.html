@@ -6,6 +6,8 @@
     <title>Javoblarni kiritish</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="dns-prefetch" href="https://unpkg.com">
     <script defer src="https://unpkg.com/mathlive@0.110.0"></script>
     <script type="module">
     {% raw %}
@@ -130,6 +132,21 @@
         [data-theme='dark'] .glass-panel {
             background: rgba(31, 41, 55, 0.82);
             border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* MathLive hali yuklanmagan paytda — bo'sh "buzuq" quti emas, yuklanish animatsiyasi */
+        math-field:not(:defined) {
+            display: block;
+            width: 100%;
+            min-height: 46px;
+            border-radius: 10px;
+            border: 1.5px solid #1e3a5f;
+            background: linear-gradient(90deg, #081a33 25%, #12305a 50%, #081a33 75%);
+            background-size: 200% 100%;
+            animation: ml-loading 1.2s ease-in-out infinite;
+        }
+        @keyframes ml-loading {
+            from { background-position: 200% 0; }
+            to { background-position: -200% 0; }
         }
         .open-field {
             width: 100%;
