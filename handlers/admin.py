@@ -109,6 +109,27 @@ async def _show_admin_panel_edit(query):
         await query.message.reply_html(_admin_panel_text(), reply_markup=admin_keyboard())
 
 
+async def _edit_message_to_panel(context: ContextTypes.DEFAULT_TYPE, chat_id, message_id) -> bool:
+    """Saqlangan xabarni (chat_id+message_id) admin panelga tahrirlaydi.
+
+    `/cancel` buyrug'i orqali bekor qilinganda ishlatiladi: bot avval ko'rsatgan
+    so'rov xabarini panelga aylantiramiz (yangi "Bekor qilindi" xabari o'rniga).
+    """
+    if not chat_id or not message_id:
+        return False
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=_admin_panel_text(),
+            parse_mode="HTML",
+            reply_markup=admin_keyboard(),
+        )
+        return True
+    except Exception:
+        return False
+
+
 @admin_only
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin panel"""
@@ -563,6 +584,9 @@ async def broadcast_start_callback(update: Update, context: ContextTypes.DEFAULT
         "❌ Bekor qilish: /cancel",
         parse_mode="HTML",
     )
+    # Bekor qilinganda shu so'rov xabarini admin panelga qaytarish uchun saqlaymiz
+    context.user_data["broadcast_prompt_chat_id"] = query.message.chat_id
+    context.user_data["broadcast_prompt_message_id"] = query.message.message_id
     return WAITING_BROADCAST_MSG
 
 
@@ -643,6 +667,8 @@ async def broadcast_confirm_callback(update: Update, context: ContextTypes.DEFAU
 
     from_chat_id = context.user_data.pop("broadcast_from_chat_id", None)
     message_id = context.user_data.pop("broadcast_message_id", None)
+    context.user_data.pop("broadcast_prompt_chat_id", None)
+    context.user_data.pop("broadcast_prompt_message_id", None)
 
     if not from_chat_id or not message_id:
         await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
@@ -669,15 +695,26 @@ async def broadcast_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     await query.answer("❌ Bekor qilindi")
     context.user_data.pop("broadcast_from_chat_id", None)
     context.user_data.pop("broadcast_message_id", None)
+    context.user_data.pop("broadcast_prompt_chat_id", None)
+    context.user_data.pop("broadcast_prompt_message_id", None)
     await _show_admin_panel_edit(query)
     return ConversationHandler.END
 
 
 async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/cancel — xabar yuborishni bekor qilish."""
+    """/cancel — xabar yuborishni bekor qilib, admin panelga qaytish.
+
+    Yangi "Bekor qilindi" xabari o'rniga, bot avval ko'rsatgan so'rov xabarini
+    admin panelga aylantiramiz (tahrirlab). Tahrir imkonsiz bo'lsa — yangi panel.
+    """
     context.user_data.pop("broadcast_from_chat_id", None)
     context.user_data.pop("broadcast_message_id", None)
-    await update.message.reply_text("❌ Bekor qilindi.")
+    prompt_chat_id = context.user_data.pop("broadcast_prompt_chat_id", None)
+    prompt_message_id = context.user_data.pop("broadcast_prompt_message_id", None)
+
+    edited = await _edit_message_to_panel(context, prompt_chat_id, prompt_message_id)
+    if not edited:
+        await update.message.reply_html(_admin_panel_text(), reply_markup=admin_keyboard())
     return ConversationHandler.END
 
 
