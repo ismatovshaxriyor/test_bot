@@ -16,6 +16,8 @@ from backup import send_backup
 # Conversation states
 WAITING_CHANNEL_ID = 0
 WAITING_ADMIN_ID = 1
+WAITING_BROADCAST_MSG = 2      # admin yubormoqchi bo'lgan xabarni kutish
+WAITING_BROADCAST_CONFIRM = 3  # preview + tasdiq
 
 
 def is_admin(user_id: int) -> bool:
@@ -51,6 +53,7 @@ def admin_keyboard():
         [InlineKeyboardButton("📢 Kanallar", callback_data="admin_channels")],
         [InlineKeyboardButton("👑 Adminlar", callback_data="admin_admins")],
         [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="admin_users")],
+        [InlineKeyboardButton("📨 Xabar yuborish", callback_data="admin_broadcast")],
         [
             InlineKeyboardButton("📝 Testlar", callback_data="admin_tests"),
             InlineKeyboardButton("🟢 Faol testlar", callback_data="admin_active_tests"),
@@ -536,30 +539,74 @@ async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text(f"❌ Zaxira olishda xatolik: {e}")
 
 
-@admin_only
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Barcha foydalanuvchilarga xabar yuborish"""
-    if not context.args:
-        await update.message.reply_html(
-            "❌ Xabar matnini kiriting!\n"
-            "Masalan: <code>/broadcast Salom, yangilik bor!</code>"
-        )
-        return
+# ============ BROADCAST (hamma foydalanuvchilarga xabar) ============
 
-    message = ' '.join(context.args)
+@admin_only
+async def broadcast_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xabar yuborishni boshlash — admindan xabarni so'rash."""
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data.pop("broadcast_from_chat_id", None)
+    context.user_data.pop("broadcast_message_id", None)
+
+    total_users = User.select().count()
+    await query.message.edit_text(
+        "📨 <b>Xabar yuborish</b>\n\n"
+        f"Bu xabar barcha <b>{total_users} ta</b> foydalanuvchiga yuboriladi.\n\n"
+        "Yubormoqchi bo'lgan xabaringizni hozir shu yerga yuboring — "
+        "<b>matn, rasm, video yoki fayl</b> bo'lishi mumkin. Xabar foydalanuvchilarga "
+        "aynan o'zingiz yuborgan ko'rinishda yetkaziladi.\n\n"
+        "❌ Bekor qilish: /cancel",
+        parse_mode="HTML",
+    )
+    return WAITING_BROADCAST_MSG
+
+
+async def broadcast_receive_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adminning xabarini olib, preview + tasdiq ko'rsatish.
+
+    Xabarning manzili (chat_id + message_id) saqlanadi — tasdiqlangach
+    `copy_message` orqali har bir foydalanuvchiga aynan shu xabar nusxalanadi.
+    """
+    msg = update.message
+    context.user_data["broadcast_from_chat_id"] = msg.chat_id
+    context.user_data["broadcast_message_id"] = msg.message_id
+
+    total_users = User.select().count()
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Ha, yuborish", callback_data="broadcast_send"),
+            InlineKeyboardButton("❌ Bekor", callback_data="broadcast_cancel"),
+        ]
+    ])
+    await msg.reply_html(
+        f"☝️ <b>Yuqoridagi xabar</b> {total_users} ta foydalanuvchiga yuboriladi.\n\n"
+        f"Tasdiqlaysizmi?",
+        reply_markup=keyboard,
+    )
+    return WAITING_BROADCAST_CONFIRM
+
+
+async def _run_broadcast(bot, from_chat_id: int, message_id: int, status_message):
+    """Xabarni barcha foydalanuvchilarga ORQA FONDA yuboradi.
+
+    Bu korutina alohida vazifa (task) sifatida ishga tushiriladi — shuning uchun
+    yuborish minutlab cho'zilsa ham botning asosiy update oqimini bloklamaydi,
+    bot boshqa foydalanuvchilarga javob berishda davom etadi. Jarayon davomida
+    `status_message` (tasdiq xabari) progress bilan yangilanadi.
+    """
     users = list(User.select())
+    total = len(users)
 
     sent = 0
     failed = 0
-
-    status_msg = await update.message.reply_text(f"📤 Xabar yuborilmoqda... 0/{len(users)}")
-
     for user in users:
         try:
-            await context.bot.send_message(
+            await bot.copy_message(
                 chat_id=user.telegram_id,
-                text=f"📢 <b>Admin xabari:</b>\n\n{message}",
-                parse_mode="HTML"
+                from_chat_id=from_chat_id,
+                message_id=message_id,
             )
             sent += 1
         except Exception:
@@ -568,17 +615,67 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Telegram flood limitiga (~30 msg/sek) tushmaslik uchun
         await asyncio.sleep(0.05)
 
-        if (sent + failed) % 10 == 0:
+        if (sent + failed) % 25 == 0:
             try:
-                await status_msg.edit_text(f"📤 Xabar yuborilmoqda... {sent + failed}/{len(users)}")
+                await status_message.edit_text(f"📤 Xabar yuborilmoqda... {sent + failed}/{total}")
             except Exception:
                 pass
 
-    await status_msg.edit_text(
-        f"✅ Xabar yuborildi!\n\n"
-        f"📤 Yuborildi: {sent} ta\n"
-        f"❌ Xato: {failed} ta"
+    try:
+        await status_message.edit_text(
+            f"✅ <b>Xabar yuborildi!</b>\n\n"
+            f"📤 Yuborildi: {sent} ta\n"
+            f"❌ Yetib bormadi: {failed} ta",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+
+@admin_only
+async def broadcast_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tasdiq — yuborishni orqa fon vazifasi sifatida boshlash (botni bloklamaydi)."""
+    query = update.callback_query
+    await query.answer()
+
+    from_chat_id = context.user_data.pop("broadcast_from_chat_id", None)
+    message_id = context.user_data.pop("broadcast_message_id", None)
+
+    if not from_chat_id or not message_id:
+        await query.message.edit_text("❌ Sessiya muddati tugadi. Qaytadan boshlang.")
+        return ConversationHandler.END
+
+    total = User.select().count()
+    try:
+        await query.message.edit_text(f"📤 Xabar yuborish boshlandi (orqa fonda)... 0/{total}")
+    except Exception:
+        pass
+
+    # Yuborish sikli alohida task'da ishlaydi: handler darrov tugaydi, bot
+    # boshqa so'rovlarga javob berishda davom etadi. Task application tomonidan
+    # kuzatiladi (yo'qolib ketmaydi, to'xtaganda kutiladi).
+    context.application.create_task(
+        _run_broadcast(context.bot, from_chat_id, message_id, query.message)
     )
+    return ConversationHandler.END
+
+
+async def broadcast_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tasdiq bosqichida bekor qilish (tugma)."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("broadcast_from_chat_id", None)
+    context.user_data.pop("broadcast_message_id", None)
+    await query.message.edit_text("❌ Xabar yuborish bekor qilindi.")
+    return ConversationHandler.END
+
+
+async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/cancel — xabar yuborishni bekor qilish."""
+    context.user_data.pop("broadcast_from_chat_id", None)
+    context.user_data.pop("broadcast_message_id", None)
+    await update.message.reply_text("❌ Bekor qilindi.")
+    return ConversationHandler.END
 
 
 # ============ ADMIN MANAGEMENT ============
@@ -818,12 +915,32 @@ def get_handlers():
         fallbacks=[CommandHandler("cancel", cancel_add_admin)],
     )
 
+    # Xabar yuborish (broadcast) conversation
+    broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(broadcast_start_callback, pattern=r"^admin_broadcast$")],
+        states={
+            WAITING_BROADCAST_MSG: [
+                # Istalgan turdagi xabar (matn/rasm/video/fayl), buyruq va service xabarlardan tashqari
+                MessageHandler(
+                    filters.ChatType.PRIVATE & ~filters.COMMAND & ~filters.StatusUpdate.ALL,
+                    broadcast_receive_message,
+                ),
+            ],
+            WAITING_BROADCAST_CONFIRM: [
+                CallbackQueryHandler(broadcast_confirm_callback, pattern=r"^broadcast_send$"),
+                CallbackQueryHandler(broadcast_cancel_callback, pattern=r"^broadcast_cancel$"),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_broadcast, filters=filters.ChatType.PRIVATE)],
+        allow_reentry=True,
+    )
+
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
-        CommandHandler("broadcast", broadcast_command, filters=filters.ChatType.PRIVATE),
         CommandHandler("whois", whois_command, filters=filters.ChatType.PRIVATE),
         add_channel_conv,
         add_admin_conv,
+        broadcast_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),
         CallbackQueryHandler(admin_backup_callback, pattern=r"^admin_backup$"),
         CallbackQueryHandler(channels_callback, pattern=r"^admin_channels$"),
