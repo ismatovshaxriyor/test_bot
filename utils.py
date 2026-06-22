@@ -452,14 +452,14 @@ def get_answer_review(correct: str, submitted: str) -> List[Dict]:
             ca, cb = _split_open2_token(correct_answers[i])
             sa, sb = _split_open2_token(submitted_answers[i])
             review.append({
-                "index": f"{question_num}a",
+                "index": f"{question_num}-A",
                 "type": "open2_a",
                 "is_correct": bool(ca) and ca == sa,
                 "submitted_display": to_display("open", sa),
                 "correct_display": to_display("open", ca),
             })
             review.append({
-                "index": f"{question_num}b",
+                "index": f"{question_num}-B",
                 "type": "open2_b",
                 "is_correct": bool(cb) and cb == sb,
                 "submitted_display": to_display("open", sb),
@@ -709,15 +709,15 @@ def get_question_stats(test: Test) -> Dict:
             'rasch': {'rasch_available': False}
         }
 
-    # Expanded labels: open2 -> "36a","36b"; boshqalar -> "1","2",...
+    # Expanded labels: open2 -> "36-A","36-B"; boshqalar -> "1","2",...
     exp_labels = []
     qnum = 0
     for i in range(raw_total):
         qnum += 1
         q_type = question_types[i] if i < len(question_types) else "closed"
         if q_type == "open2":
-            exp_labels.append(f"{qnum}a")
-            exp_labels.append(f"{qnum}b")
+            exp_labels.append(f"{qnum}-A")
+            exp_labels.append(f"{qnum}-B")
         else:
             exp_labels.append(str(qnum))
 
