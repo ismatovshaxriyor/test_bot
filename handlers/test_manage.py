@@ -450,17 +450,26 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_subs = [s for s in submissions if s.test.is_active]
 
     total_tests = len(submissions)
+    ended_count = len(ended_subs)
+    active_count = len(active_subs)
+    # To'g'ri javoblar / o'rtacha FAQAT yakunlangan testlar bo'yicha hisoblanadi
+    # (faol testlar natijasi hali yashirin — ular o'rtachaga qo'shilmaydi).
     total_correct = sum(s.correct_count for s in ended_subs)
     total_questions = sum(s.total_count for s in ended_subs)
     avg_percentage = round((total_correct / total_questions) * 100, 1) if total_questions > 0 else 0
 
     text = f"📊 <b>Sizning statistikangiz</b>\n\n"
     text += f"📝 Yechilgan testlar: {total_tests} ta\n"
+    if active_count:
+        text += f"   ✅ Yakunlangan: {ended_count} ta\n"
+        text += f"   ⏳ Kutilmoqda: {active_count} ta\n"
+    text += "\n"
+
     if ended_subs:
+        if active_count:
+            text += f"📊 <b>Yakunlangan {ended_count} ta test bo'yicha:</b>\n"
         text += f"✅ To'g'ri javoblar: {total_correct}/{total_questions}\n"
         text += f"📈 O'rtacha natija: {avg_percentage}%\n\n"
-    else:
-        text += "\n"
 
     if ended_subs:
         text += "<b>So'nggi natijalar:</b>\n"
