@@ -83,9 +83,8 @@ def channels_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-@admin_only
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin panel"""
+def _admin_panel_text() -> str:
+    """Admin panel sarlavhasi + qisqa statistika."""
     total_users = User.select().count()
     total_tests = Test.select().count()
     active_tests = Test.select().where(Test.is_active == True).count()
@@ -96,8 +95,24 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"📝 Barcha testlar: {total_tests} ta\n"
     text += f"🟢 Faol testlar: {active_tests} ta\n"
     text += f"📢 Majburiy kanallar: {total_channels} ta\n"
+    return text
 
-    await update.message.reply_html(text, reply_markup=admin_keyboard())
+
+async def _show_admin_panel_edit(query):
+    """Mavjud xabarni admin panelga aylantirib tahrirlaydi (bekor/qaytish uchun)."""
+    try:
+        await query.message.edit_text(
+            _admin_panel_text(), parse_mode="HTML", reply_markup=admin_keyboard()
+        )
+    except Exception:
+        # Tahrirlab bo'lmasa (masalan, media xabari) — yangi xabar bilan ko'rsatamiz
+        await query.message.reply_html(_admin_panel_text(), reply_markup=admin_keyboard())
+
+
+@admin_only
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin panel"""
+    await update.message.reply_html(_admin_panel_text(), reply_markup=admin_keyboard())
 
 
 @admin_only
@@ -105,19 +120,7 @@ async def admin_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Admin panelga qaytish"""
     query = update.callback_query
     await query.answer()
-
-    total_users = User.select().count()
-    total_tests = Test.select().count()
-    active_tests = Test.select().where(Test.is_active == True).count()
-    total_channels = Channel.select().where(Channel.is_active == True).count()
-
-    text = f"👑 <b>Admin Panel</b>\n\n"
-    text += f"👥 Foydalanuvchilar: {total_users} ta\n"
-    text += f"📝 Barcha testlar: {total_tests} ta\n"
-    text += f"🟢 Faol testlar: {active_tests} ta\n"
-    text += f"📢 Majburiy kanallar: {total_channels} ta\n"
-
-    await query.message.edit_text(text, parse_mode="HTML", reply_markup=admin_keyboard())
+    await _show_admin_panel_edit(query)
 
 
 @admin_only
@@ -661,12 +664,12 @@ async def broadcast_confirm_callback(update: Update, context: ContextTypes.DEFAU
 
 
 async def broadcast_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tasdiq bosqichida bekor qilish (tugma)."""
+    """Tasdiq bosqichida bekor qilish (tugma) — darrov admin panelga qaytadi."""
     query = update.callback_query
-    await query.answer()
+    await query.answer("❌ Bekor qilindi")
     context.user_data.pop("broadcast_from_chat_id", None)
     context.user_data.pop("broadcast_message_id", None)
-    await query.message.edit_text("❌ Xabar yuborish bekor qilindi.")
+    await _show_admin_panel_edit(query)
     return ConversationHandler.END
 
 
