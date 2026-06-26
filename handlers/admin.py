@@ -12,12 +12,14 @@ from telegram.error import TelegramError
 from database import User, Test, TestSubmission, Channel, AdminTestWatch
 from config import ADMIN_ID
 from backup import send_backup
+from utils import get_question_stats, format_stats
 
 # Conversation states
 WAITING_CHANNEL_ID = 0
 WAITING_ADMIN_ID = 1
 WAITING_BROADCAST_MSG = 2      # admin yubormoqchi bo'lgan xabarni kutish
 WAITING_BROADCAST_CONFIRM = 3  # preview + tasdiq
+WAITING_RESULT_CODE = 4        # natija qidirish — test kodini kutish
 
 
 def is_admin(user_id: int) -> bool:
@@ -368,6 +370,7 @@ async def tests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"\n<b>Jami:</b> {total} ta"
 
     keyboard = [
+        [InlineKeyboardButton("🔍 Natija qidirish", callback_data="admin_search_result")],
         [InlineKeyboardButton("🟢 Faol testlar (kuzatuv)", callback_data="admin_active_tests")],
         [InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")],
     ]
@@ -945,6 +948,124 @@ async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html("\n".join(lines), disable_web_page_preview=True)
 
 
+# ============ TEST NATIJASINI QIDIRISH (faqat admin) ============
+
+async def _send_test_result(message, code: str) -> bool:
+    """Test kodi bo'yicha natijani (statistikani) ko'rsatadi.
+
+    Admin uchun — yaratuvchi cheklovi yo'q (kirish allaqachon @admin_only bilan
+    himoyalangan). Test topilmasa False qaytaradi (chaqiruvchi qayta so'raydi).
+    """
+    try:
+        if not str(code).isdigit():
+            raise Test.DoesNotExist
+        test = Test.get_by_id(int(code))
+    except Test.DoesNotExist:
+        return False
+
+    creator_name = (
+        test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
+    )
+
+    if test.is_active:
+        # Faol test — to'liq natija hali yo'q (ishtirokchilar sonini ko'rsatamiz)
+        subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
+        text = (
+            f"📊 <b>Test natijasi</b>\n\n"
+            f"📝 Test kodi: <code>{test.id}</code>\n"
+            f"👤 Yaratuvchi: {escape(creator_name)}\n"
+            f"❓ Savollar soni: {test.total_questions} ta\n"
+            f"👥 Ishtirokchilar: {subs_count} ta\n\n"
+            f"🟢 Test faol\n\n"
+            f"⚠️ To'liq natija test yakunlangandan keyin ko'rsatiladi."
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Testlarga qaytish", callback_data="admin_tests")],
+        ])
+    else:
+        # Yakunlangan test — to'liq statistika
+        stats = get_question_stats(test)
+        text = format_stats(stats, test)
+        text += "\n\n🔴 Test yakunlangan"
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📥 Excel", callback_data=f"export_excel_{test.id}"),
+                InlineKeyboardButton("📥 PDF", callback_data=f"export_pdf_{test.id}"),
+                InlineKeyboardButton("📊 Grafik", callback_data=f"export_chart_{test.id}"),
+            ],
+            [InlineKeyboardButton("🔙 Testlarga qaytish", callback_data="admin_tests")],
+        ])
+
+    await message.reply_html(text, reply_markup=keyboard)
+    return True
+
+
+@admin_only
+async def search_result_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🔍 Natija qidirish — admindan test kodini so'rash."""
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.edit_text(
+        "🔍 <b>Test natijasini qidirish</b>\n\n"
+        "Natijasini ko'rmoqchi bo'lgan test <b>kodini</b> kiriting:\n\n"
+        "Masalan: <code>123</code>\n\n"
+        "❌ Bekor qilish: /cancel",
+        parse_mode="HTML",
+    )
+    # Bekor qilinganda shu so'rov xabarini admin panelga qaytarish uchun saqlaymiz
+    context.user_data["result_prompt_chat_id"] = query.message.chat_id
+    context.user_data["result_prompt_message_id"] = query.message.message_id
+    return WAITING_RESULT_CODE
+
+
+async def receive_result_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kiritilgan test kodi bo'yicha natijani chiqarish."""
+    raw = (update.message.text or "").strip().lstrip("#").strip()
+
+    if not raw.isdigit():
+        await update.message.reply_html(
+            "❌ Test kodi raqamlardan iborat bo'lishi kerak.\n"
+            "Qaytadan kiriting yoki /cancel."
+        )
+        return WAITING_RESULT_CODE
+
+    found = await _send_test_result(update.message, raw)
+    if not found:
+        await update.message.reply_html(
+            f"❌ <code>{escape(raw)}</code> kodli test topilmadi.\n"
+            "Boshqa kod kiriting yoki /cancel."
+        )
+        return WAITING_RESULT_CODE
+
+    context.user_data.pop("result_prompt_chat_id", None)
+    context.user_data.pop("result_prompt_message_id", None)
+    return ConversationHandler.END
+
+
+async def cancel_search_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/cancel — natija qidirishni bekor qilib, admin panelga qaytish."""
+    prompt_chat_id = context.user_data.pop("result_prompt_chat_id", None)
+    prompt_message_id = context.user_data.pop("result_prompt_message_id", None)
+    chat_id = update.effective_chat.id
+
+    # Foydalanuvchi yuborgan /cancel xabarini o'chiramiz — chat toza qolsin.
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    edited = await _edit_message_to_panel(context, prompt_chat_id, prompt_message_id)
+    if not edited:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=_admin_panel_text(),
+            parse_mode="HTML",
+            reply_markup=admin_keyboard(),
+        )
+    return ConversationHandler.END
+
+
 def get_handlers():
     """Handlerlarni qaytarish"""
     # Kanal qo'shish conversation
@@ -989,12 +1110,25 @@ def get_handlers():
         allow_reentry=True,
     )
 
+    # Test natijasini qidirish (faqat admin) conversation
+    search_result_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(search_result_start_callback, pattern=r"^admin_search_result$")],
+        states={
+            WAITING_RESULT_CODE: [
+                MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, receive_result_code),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_search_result, filters=filters.ChatType.PRIVATE)],
+        allow_reentry=True,
+    )
+
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
         CommandHandler("whois", whois_command, filters=filters.ChatType.PRIVATE),
         add_channel_conv,
         add_admin_conv,
         broadcast_conv,
+        search_result_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),
         CallbackQueryHandler(admin_backup_callback, pattern=r"^admin_backup$"),
         CallbackQueryHandler(channels_callback, pattern=r"^admin_channels$"),
