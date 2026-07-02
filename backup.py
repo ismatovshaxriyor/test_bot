@@ -1,4 +1,4 @@
-"""Database zaxira nusxasini yaratish va yuborish (manual tugma + avtomatik jadval)"""
+"""Database zaxira nusxasini yaratish, yuborish va tiklash (manual tugma + avtomatik jadval)"""
 import logging
 import os
 import sqlite3
@@ -34,6 +34,84 @@ def create_backup_file() -> tuple[str, int]:
         src.close()
 
     return backup_path, os.path.getsize(backup_path)
+
+
+def restore_backup_file(downloaded_path: str) -> dict:
+    """Yuklangan .db faylni joriy bazaga tiklaydi.
+
+    Xavfsizlik uchun avval joriy bazaning zaxira nusxasi olinadi, keyin
+    yuklangan fayl SQLite backup API orqali joriy bazaga yoziladi.
+
+    Args:
+        downloaded_path: Telegramdan yuklangan .db fayl manzili.
+
+    Returns:
+        dict: {
+            "success": bool,
+            "safety_backup": str | None,   — xavfsizlik nusxasi yo'li
+            "error": str | None,
+            "tables": dict | None,         — tiklangan jadval: yozuvlar soni
+        }
+
+    Raises:
+        Hech narsa — barcha xatolar dict ichida qaytadi.
+    """
+    result = {"success": False, "safety_backup": None, "error": None, "tables": None}
+
+    # 1) Yuklangan fayl haqiqiy SQLite bazasimi — tekshirish
+    try:
+        check = sqlite3.connect(downloaded_path)
+        try:
+            check.execute("SELECT count(*) FROM sqlite_master")
+        finally:
+            check.close()
+    except sqlite3.DatabaseError as e:
+        result["error"] = f"Fayl yaroqli SQLite bazasi emas: {e}"
+        return result
+
+    # 2) Joriy bazaning xavfsizlik nusxasini olish
+    try:
+        safety_path, _ = create_backup_file()
+        result["safety_backup"] = safety_path
+    except Exception as e:
+        result["error"] = f"Xavfsizlik nusxasi olinmadi: {e}"
+        return result
+
+    # 3) Yuklangan faylni joriy bazaga tiklash (SQLite backup API)
+    try:
+        src = sqlite3.connect(downloaded_path)
+        try:
+            dst = sqlite3.connect(DATABASE_PATH)
+            try:
+                with dst:
+                    src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+    except Exception as e:
+        result["error"] = f"Bazani tiklashda xatolik: {e}"
+        return result
+
+    # 4) Tiklangan baza tarkibini o'qish (jadval — yozuvlar soni)
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        try:
+            tables = {}
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            for (tbl,) in rows:
+                cnt = conn.execute(f"SELECT count(*) FROM [{tbl}]").fetchone()[0]
+                tables[tbl] = cnt
+            result["tables"] = tables
+        finally:
+            conn.close()
+    except Exception:
+        pass  # jadval ma'lumoti yo'q — jiddiy emas
+
+    result["success"] = True
+    return result
 
 
 async def send_backup(bot, chat_id: int, title: str = "💾 Database zaxira nusxasi") -> None:

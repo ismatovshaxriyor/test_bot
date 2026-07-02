@@ -1,5 +1,7 @@
 """Admin handlerlari"""
 import asyncio
+import os
+import tempfile
 from html import escape
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,9 +11,9 @@ from telegram.ext import (
 )
 from telegram.error import TelegramError
 
-from database import User, Test, TestSubmission, Channel, AdminTestWatch
+from database import User, Test, TestSubmission, Channel, AdminTestWatch, init_db
 from config import ADMIN_ID
-from backup import send_backup
+from backup import send_backup, restore_backup_file
 from utils import get_question_stats, format_stats, format_stats_simple, format_answer_key
 
 # Conversation states
@@ -20,6 +22,8 @@ WAITING_ADMIN_ID = 1
 WAITING_BROADCAST_MSG = 2      # admin yubormoqchi bo'lgan xabarni kutish
 WAITING_BROADCAST_CONFIRM = 3  # preview + tasdiq
 WAITING_RESULT_CODE = 4        # natija qidirish — test kodini kutish
+WAITING_RESTORE_FILE = 5       # zaxirani tiklash — .db faylni kutish
+WAITING_RESTORE_CONFIRM = 6    # zaxirani tiklash — tasdiqlash
 
 
 def is_admin(user_id: int) -> bool:
@@ -61,6 +65,7 @@ def admin_keyboard():
             InlineKeyboardButton("🟢 Faol testlar", callback_data="admin_active_tests"),
         ],
         [InlineKeyboardButton("💾 Zaxira olish (Backup)", callback_data="admin_backup")],
+        [InlineKeyboardButton("📥 Zaxirani tiklash (Restore)", callback_data="admin_restore")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -564,6 +569,239 @@ async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await send_backup(context.bot, update.effective_user.id)
     except Exception as e:
         await query.message.reply_text(f"❌ Zaxira olishda xatolik: {e}")
+
+
+# ============ BACKUP RESTORE (zaxirani tiklash) ============
+
+@admin_only
+async def admin_restore_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zaxirani tiklashni boshlash — admindan .db faylni so'rash."""
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.edit_text(
+        "📥 <b>Zaxirani tiklash (Restore)</b>\n\n"
+        "Tiklash uchun avval olingan <b>.db</b> zaxira faylini shu yerga yuboring.\n\n"
+        "⚠️ <b>Diqqat:</b> joriy baza o'rniga yuborilgan fayl yoziladi! "
+        "Xavfsizlik uchun tiklashdan oldin avtomatik ravishda joriy bazaning "
+        "zaxira nusxasi olinadi.\n\n"
+        "❌ Bekor qilish: /cancel",
+        parse_mode="HTML",
+    )
+    context.user_data["restore_prompt_chat_id"] = query.message.chat_id
+    context.user_data["restore_prompt_message_id"] = query.message.message_id
+    return WAITING_RESTORE_FILE
+
+
+async def restore_receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yuborilgan document ni qabul qilish, tekshirish, va tasdiq so'rash."""
+    msg = update.message
+    doc = msg.document
+
+    if not doc:
+        await msg.reply_html(
+            "❌ Iltimos, <b>fayl</b> sifatida yuboring (rasm/video emas).\n\n"
+            "❌ Bekor qilish: /cancel"
+        )
+        return WAITING_RESTORE_FILE
+
+    # Fayl nomi .db bilan tugashini tekshirish
+    fname = doc.file_name or ""
+    if not fname.lower().endswith(".db"):
+        await msg.reply_html(
+            f"❌ <b>{escape(fname)}</b> — bu <code>.db</code> fayl emas!\n\n"
+            "Faqat <code>.db</code> kengaytmali SQLite zaxira faylini yuboring.\n\n"
+            "❌ Bekor qilish: /cancel"
+        )
+        return WAITING_RESTORE_FILE
+
+    # Telegram 20 MB gacha fayllarni to'g'ridan-to'g'ri yuklab olishga ruxsat beradi
+    if doc.file_size and doc.file_size > 20 * 1024 * 1024:
+        await msg.reply_html(
+            "❌ Fayl hajmi 20 MB dan katta! Telegram bot API orqali yuklab bo'lmaydi.\n\n"
+            "❌ Bekor qilish: /cancel"
+        )
+        return WAITING_RESTORE_FILE
+
+    # Faylni vaqtinchalik joyga yuklab olish
+    await msg.reply_text("⏳ Fayl yuklanmoqda...")
+    try:
+        tg_file = await context.bot.get_file(doc.file_id)
+        tmp_path = os.path.join(tempfile.gettempdir(), f"restore_{doc.file_unique_id}.db")
+        await tg_file.download_to_drive(tmp_path)
+    except Exception as e:
+        await msg.reply_html(
+            f"❌ Faylni yuklab olishda xatolik: {escape(str(e))}\n\n"
+            "Qaytadan urinib ko'ring yoki /cancel."
+        )
+        return WAITING_RESTORE_FILE
+
+    # Fayl yaroqli SQLite bazasi ekanligini oldindan tekshirish
+    import sqlite3
+    try:
+        check_conn = sqlite3.connect(tmp_path)
+        try:
+            tables_raw = check_conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            preview_tables = {}
+            for (tbl,) in tables_raw:
+                cnt = check_conn.execute(f"SELECT count(*) FROM [{tbl}]").fetchone()[0]
+                preview_tables[tbl] = cnt
+        finally:
+            check_conn.close()
+    except sqlite3.DatabaseError as e:
+        await msg.reply_html(
+            f"❌ Bu yaroqli SQLite bazasi emas!\n"
+            f"Xato: <code>{escape(str(e))}</code>\n\n"
+            "Boshqa fayl yuboring yoki /cancel."
+        )
+        # Vaqtinchalik faylni o'chirish
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        return WAITING_RESTORE_FILE
+
+    # Tarkibni ko'rsatib, tasdiq so'rash
+    context.user_data["restore_tmp_path"] = tmp_path
+
+    size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
+    table_lines = "\n".join(
+        f"  • <code>{tbl}</code>: {cnt} ta yozuv" for tbl, cnt in preview_tables.items()
+    ) or "  (jadvallar topilmadi)"
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Ha, tiklash", callback_data="restore_confirm"),
+            InlineKeyboardButton("❌ Bekor", callback_data="restore_cancel"),
+        ]
+    ])
+
+    await msg.reply_html(
+        f"📥 <b>Zaxirani tiklash — tasdiqlash</b>\n\n"
+        f"📄 Fayl: <code>{escape(fname)}</code>\n"
+        f"📦 Hajmi: {size_mb:.2f} MB\n\n"
+        f"📊 <b>Fayl tarkibi:</b>\n{table_lines}\n\n"
+        f"⚠️ <b>Bu joriy bazadagi barcha ma'lumotlarni o'rniga yozadi!</b>\n"
+        f"(Tiklashdan oldin joriy bazaning xavfsizlik nusxasi olinadi)\n\n"
+        f"Davom ettirilsinmi?",
+        reply_markup=keyboard,
+    )
+    return WAITING_RESTORE_CONFIRM
+
+
+@admin_only
+async def restore_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tiklashni tasdiqlash — bazani almashtirish."""
+    query = update.callback_query
+    await query.answer("⏳ Baza tiklanmoqda...")
+
+    tmp_path = context.user_data.pop("restore_tmp_path", None)
+    context.user_data.pop("restore_prompt_chat_id", None)
+    context.user_data.pop("restore_prompt_message_id", None)
+
+    if not tmp_path or not os.path.exists(tmp_path):
+        await query.message.edit_text("❌ Sessiya muddati tugadi yoki fayl topilmadi. Qaytadan boshlang.")
+        return ConversationHandler.END
+
+    # Tiklash
+    result = restore_backup_file(tmp_path)
+
+    # Vaqtinchalik faylni o'chirish
+    try:
+        os.remove(tmp_path)
+    except OSError:
+        pass
+
+    if not result["success"]:
+        await query.message.edit_text(
+            f"❌ <b>Tiklashda xatolik!</b>\n\n{escape(result['error'] or 'Noma\'lum xato')}",
+            parse_mode="HTML",
+        )
+        return ConversationHandler.END
+
+    # Peewee ulanishlarini yangilash (eski keshdan qutilish)
+    try:
+        from database import db
+        if not db.is_closed():
+            db.close()
+        db.connect()
+    except Exception:
+        pass
+
+    # Natijani ko'rsatish
+    table_lines = ""
+    if result["tables"]:
+        table_lines = "\n".join(
+            f"  • <code>{tbl}</code>: {cnt} ta yozuv"
+            for tbl, cnt in result["tables"].items()
+        )
+
+    safety_info = ""
+    if result["safety_backup"]:
+        safety_info = f"\n🔒 Xavfsizlik nusxasi: <code>{escape(result['safety_backup'])}</code>"
+
+    await query.message.edit_text(
+        f"✅ <b>Baza muvaffaqiyatli tiklandi!</b>\n\n"
+        f"📊 <b>Tiklangan jadvallar:</b>\n{table_lines or '  (ma\'lumot yo\'q)'}\n"
+        f"{safety_info}\n\n"
+        f"ℹ️ Agar nimadir noto'g'ri bo'lsa, xavfsizlik nusxasini yuborib qayta tiklashingiz mumkin.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 Admin panel", callback_data="admin_back")]]
+        ),
+    )
+    return ConversationHandler.END
+
+
+async def restore_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tiklashni bekor qilish (tugma)."""
+    query = update.callback_query
+    await query.answer("❌ Bekor qilindi")
+
+    # Vaqtinchalik faylni o'chirish
+    tmp_path = context.user_data.pop("restore_tmp_path", None)
+    context.user_data.pop("restore_prompt_chat_id", None)
+    context.user_data.pop("restore_prompt_message_id", None)
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    await _show_admin_panel_edit(query)
+    return ConversationHandler.END
+
+
+async def cancel_restore(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/cancel — tiklashni bekor qilib, admin panelga qaytish."""
+    # Vaqtinchalik faylni o'chirish
+    tmp_path = context.user_data.pop("restore_tmp_path", None)
+    prompt_chat_id = context.user_data.pop("restore_prompt_chat_id", None)
+    prompt_message_id = context.user_data.pop("restore_prompt_message_id", None)
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    chat_id = update.effective_chat.id
+
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    edited = await _edit_message_to_panel(context, prompt_chat_id, prompt_message_id)
+    if not edited:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=_admin_panel_text(),
+            parse_mode="HTML",
+            reply_markup=admin_keyboard(),
+        )
+    return ConversationHandler.END
 
 
 # ============ BROADCAST (hamma foydalanuvchilarga xabar) ============
@@ -1131,6 +1369,32 @@ def get_handlers():
         allow_reentry=True,
     )
 
+    # Zaxirani tiklash (restore) conversation
+    restore_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_restore_start_callback, pattern=r"^admin_restore$")],
+        states={
+            WAITING_RESTORE_FILE: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.Document.ALL & ~filters.COMMAND,
+                    restore_receive_file,
+                ),
+                # Matnli xabar kelsa — faylni kutayotganini eslatamiz
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    lambda update, ctx: update.message.reply_html(
+                        "❌ Iltimos, <b>.db fayl</b> yuboring (matn emas).\n\n❌ Bekor qilish: /cancel"
+                    ),
+                ),
+            ],
+            WAITING_RESTORE_CONFIRM: [
+                CallbackQueryHandler(restore_confirm_callback, pattern=r"^restore_confirm$"),
+                CallbackQueryHandler(restore_cancel_callback, pattern=r"^restore_cancel$"),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_restore, filters=filters.ChatType.PRIVATE)],
+        allow_reentry=True,
+    )
+
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
         # Bosh menyudagi "👑 Admin panel" tugmasi — /admin bilan bir xil panelni ochadi
@@ -1143,6 +1407,7 @@ def get_handlers():
         add_admin_conv,
         broadcast_conv,
         search_result_conv,
+        restore_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),
         CallbackQueryHandler(admin_backup_callback, pattern=r"^admin_backup$"),
         CallbackQueryHandler(channels_callback, pattern=r"^admin_channels$"),
