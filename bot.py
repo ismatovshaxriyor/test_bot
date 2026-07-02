@@ -35,12 +35,12 @@ BOT_COMMANDS = [
 
 async def global_ortga_handler(update, context):
     """Global levelda (Conversationdan tashqari) kelgan 'Ortga' ni ushlab, menyuni ko'rsatadi"""
-    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
 
 
 async def global_cancel_handler(update, context):
     """Suhbatdan tashqarida /cancel kelganda menyuni ko'rsatadi (suhbat ichida fallback ishlaydi)"""
-    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard())
+    await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
 
 
 async def backup_scheduler(application):

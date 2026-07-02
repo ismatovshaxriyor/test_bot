@@ -5,8 +5,8 @@ from config import WEBAPP_URL, WEBAPP_VERSION
 def main_menu_keyboard(user_id=None):
     """Asosiy menyu.
 
-    `📸 Fayldan test` (AI yaratish) faqat adminlarga ko'rsatiladi — shuning uchun
-    chaqirilganda foydalanuvchi ID si uzatiladi. ID berilmasa tugma yashiriladi.
+    `📸 Fayldan test` va `👑 Admin panel` faqat adminlarga ko'rsatiladi — shuning
+    uchun chaqirilganda foydalanuvchi ID si uzatiladi. ID berilmasa tugmalar yashiriladi.
     """
     keyboard = [
         [
@@ -19,7 +19,10 @@ def main_menu_keyboard(user_id=None):
         try:
             from handlers.admin import is_admin
             if is_admin(user_id):
-                keyboard.append([KeyboardButton("📸 Fayldan test")])
+                keyboard.append([
+                    KeyboardButton("📸 Fayldan test"),
+                    KeyboardButton("👑 Admin panel"),
+                ])
         except Exception:
             pass
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

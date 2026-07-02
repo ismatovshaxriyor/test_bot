@@ -4,6 +4,7 @@ import re
 import string
 import math
 import json
+from html import escape
 from typing import Optional, Tuple, List, Dict
 from database import Test, TestSubmission
 
@@ -751,8 +752,13 @@ def get_question_stats(test: Test) -> Dict:
     easiest = exp_labels[easiest_idx]
     hardest = exp_labels[hardest_idx]
 
-    # Rash modeli
-    rasch = calculate_rasch_scores(test, submissions)
+    # Rash modeli — faqat test Rash rejimida bo'lsa hisoblanadi.
+    # Oddiy testda ishtirokchilar Rash bali bo'yicha emas, to'g'ri javoblar
+    # soni bo'yicha tartiblanishi kerak (export/statistika shu ro'yxatni oladi).
+    if test.scoring_mode == "rasch":
+        rasch = calculate_rasch_scores(test, submissions)
+    else:
+        rasch = {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
 
     # Foydalanuvchilar ro'yxati
     if rasch['rasch_available']:
@@ -813,9 +819,6 @@ def format_stats(stats: Dict, test: Test) -> str:
     if stats['total_submissions'] == 0:
         return "📊 Hali hech kim test yechmagan."
 
-    rasch = stats.get('rasch', {})
-    rasch_available = rasch.get('rasch_available', False)
-
     text = f"📊 <b>Test statistikasi</b>\n"
     text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
@@ -836,6 +839,48 @@ def format_stats(stats: Dict, test: Test) -> str:
 
     text += "\n📥 <i>Natijalarni yuklab olish uchun pastdagi tugmalarni bosing</i>\n"
 
+    return text
+
+
+def format_answer_key(correct: str, max_chars: int = 2500) -> str:
+    """To'g'ri javoblar kalitini HTML ko'rinishda formatlash (admin uchun).
+
+    Yopiq savollar zich, bir qatorda 10 tadan (1.A 2.B ...), ochiq savollar
+    alohida qatorda chiqadi. Kalit max_chars dan oshsa qisqartiriladi —
+    Telegram xabari 4096 belgidan oshib ketmasligi uchun.
+    """
+    question_types = _extract_question_types(correct)
+    correct_answers = _extract_correct_answers(correct)
+    if not correct_answers:
+        return ""
+
+    lines: List[str] = []
+    closed_buf: List[str] = []
+
+    def _flush_closed():
+        for i in range(0, len(closed_buf), 10):
+            lines.append(" ".join(closed_buf[i:i + 10]))
+        closed_buf.clear()
+
+    for i, answer in enumerate(correct_answers):
+        num = i + 1
+        q_type = question_types[i] if i < len(question_types) else "closed"
+
+        if q_type == "open2":
+            _flush_closed()
+            a, b = _split_open2_token(answer)
+            lines.append(f"{num}. a) {escape(latex_to_text(a))}  b) {escape(latex_to_text(b))}")
+        elif q_type == "open":
+            _flush_closed()
+            lines.append(f"{num}. {escape(latex_to_text(answer))}")
+        else:  # closed / closed4 / closed6
+            closed_buf.append(f"{num}.{answer.upper()}")
+
+    _flush_closed()
+
+    text = "\n".join(lines)
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit("\n", 1)[0] + "\n..."
     return text
 
 

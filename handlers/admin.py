@@ -12,7 +12,7 @@ from telegram.error import TelegramError
 from database import User, Test, TestSubmission, Channel, AdminTestWatch
 from config import ADMIN_ID
 from backup import send_backup
-from utils import get_question_stats, format_stats, format_stats_simple
+from utils import get_question_stats, format_stats, format_stats_simple, format_answer_key
 
 # Conversation states
 WAITING_CHANNEL_ID = 0
@@ -967,6 +967,10 @@ async def _send_test_result(message, code: str) -> bool:
         test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
     )
 
+    # To'g'ri javoblar kaliti — admin qidiruvida har doim ko'rsatiladi
+    answer_key = format_answer_key(test.correct_answers)
+    answer_block = f"\n\n🔑 <b>To'g'ri javoblar:</b>\n{answer_key}" if answer_key else ""
+
     if test.is_active:
         # Faol test — to'liq natija hali yo'q (ishtirokchilar sonini ko'rsatamiz)
         subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
@@ -975,7 +979,8 @@ async def _send_test_result(message, code: str) -> bool:
             f"📝 Test kodi: <code>{test.id}</code>\n"
             f"👤 Yaratuvchi: {escape(creator_name)}\n"
             f"❓ Savollar soni: {test.total_questions} ta\n"
-            f"👥 Ishtirokchilar: {subs_count} ta\n\n"
+            f"👥 Ishtirokchilar: {subs_count} ta"
+            f"{answer_block}\n\n"
             f"🟢 Test faol\n\n"
             f"⚠️ To'liq natija test yakunlangandan keyin ko'rsatiladi."
         )
@@ -989,6 +994,7 @@ async def _send_test_result(message, code: str) -> bool:
             text = format_stats(stats, test)
         else:
             text = format_stats_simple(stats, test)
+        text += answer_block
         text += "\n\n🔴 Test yakunlangan"
         keyboard = InlineKeyboardMarkup([
             [
@@ -1127,6 +1133,11 @@ def get_handlers():
 
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
+        # Bosh menyudagi "👑 Admin panel" tugmasi — /admin bilan bir xil panelni ochadi
+        MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^👑 Admin panel$"),
+            admin_command,
+        ),
         CommandHandler("whois", whois_command, filters=filters.ChatType.PRIVATE),
         add_channel_conv,
         add_admin_conv,
