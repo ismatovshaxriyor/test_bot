@@ -821,8 +821,10 @@ def format_stats(stats: Dict, test: Test) -> str:
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
     text += f"❓ Savollar soni: {test.total_questions} ta\n"
 
-    if rasch_available:
+    if test.scoring_mode == "rasch":
         text += f"📐 Baholash: <b>Rash modeli</b>\n"
+    else:
+        text += f"📊 Baholash: <b>Oddiy</b>\n"
     text += "\n"
 
     # Eng oson va qiyin savollar

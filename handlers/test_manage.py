@@ -179,7 +179,10 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
     else:
         # Test yakunlangan - to'liq statistikani ko'rsatish
         stats = get_question_stats(test)
-        text = format_stats(stats, test)
+        if test.scoring_mode == 'rasch':
+            text = format_stats(stats, test)
+        else:
+            text = format_stats_simple(stats, test)
         text += f"\n\n🔴 Test yakunlangan"
         keyboard = back_to_test_keyboard(code)
 

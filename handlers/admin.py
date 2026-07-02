@@ -12,7 +12,7 @@ from telegram.error import TelegramError
 from database import User, Test, TestSubmission, Channel, AdminTestWatch
 from config import ADMIN_ID
 from backup import send_backup
-from utils import get_question_stats, format_stats
+from utils import get_question_stats, format_stats, format_stats_simple
 
 # Conversation states
 WAITING_CHANNEL_ID = 0
@@ -985,7 +985,10 @@ async def _send_test_result(message, code: str) -> bool:
     else:
         # Yakunlangan test — to'liq statistika
         stats = get_question_stats(test)
-        text = format_stats(stats, test)
+        if test.scoring_mode == 'rasch':
+            text = format_stats(stats, test)
+        else:
+            text = format_stats_simple(stats, test)
         text += "\n\n🔴 Test yakunlangan"
         keyboard = InlineKeyboardMarkup([
             [
