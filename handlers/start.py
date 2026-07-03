@@ -48,11 +48,17 @@ def _is_valid_full_name(text: str) -> bool:
 async def _ask_full_name(message):
     await message.reply_html(
         "✍️ <b>Botdan foydalanish uchun to'liq ism familiyangizni kiriting.</b>\n\n"
-        "Masalan: <code>Shaxriyor Ismatov</code>"
+        "Masalan: <code>Aziz Karimov</code>"
     )
 
 
-async def _continue_start(message, user, start_args):
+def _first_name_of(full_name: str, fallback: str = "") -> str:
+    """To'liq ism-familiyadan birinchi so'zni (ismni) ajratib olish."""
+    parts = (full_name or "").split()
+    return parts[0] if parts else (fallback or "")
+
+
+async def _continue_start(message, user, db_user, start_args):
     """Ism tasdiqlangandan keyin (yoki darrov) asosiy /start oqimi."""
     if start_args and str(start_args[0]).isdigit():
         test_code = start_args[0]
@@ -63,8 +69,9 @@ async def _continue_start(message, user, start_args):
         )
         return
 
+    display_name = _first_name_of(db_user.full_name, user.first_name)
     await message.reply_html(
-        f"👋 Salom, <b>{escape(user.first_name or '')}</b>!\n\n"
+        f"👋 Salom, <b>{escape(display_name)}</b>!\n\n"
         f"🎯 Bu bot test javoblarini tekshirish uchun yaratilgan.\n\n"
         f"Quyidagi tugmalardan foydalaning:",
         reply_markup=main_menu_keyboard(user.id)
@@ -109,7 +116,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _ask_full_name(update.message)
         return WAITING_FULL_NAME
 
-    await _continue_start(update.message, user, context.args)
+    await _continue_start(update.message, user, db_user, context.args)
     return ConversationHandler.END
 
 
@@ -141,17 +148,19 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_valid_full_name(text):
         await update.message.reply_html(
             "❌ Noto'g'ri format. Ism va familiyangizni kamida 2 ta so'z bilan kiriting.\n\n"
-            "Masalan: <code>Shaxriyor Ismatov</code>"
+            "Masalan: <code>Aziz Karimov</code>"
         )
         return WAITING_FULL_NAME
 
+    normalized = " ".join(w.capitalize() for w in text.split())
+
     user = update.effective_user
     db_user = User.get(User.telegram_id == user.id)
-    db_user.full_name = text
+    db_user.full_name = normalized
     db_user.full_name_confirmed = True
     db_user.save()
 
-    await update.message.reply_html(f"✅ Rahmat, <b>{escape(text)}</b>!")
+    await update.message.reply_html(f"✅ Rahmat, <b>{escape(normalized)}</b>!")
 
     source = context.user_data.pop("name_prompt_source", "start")
     pending_args = context.user_data.pop("pending_start_args", [])
@@ -159,7 +168,7 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if source == "profile":
         await _send_profile(update.message, user, db_user)
     else:
-        await _continue_start(update.message, user, pending_args)
+        await _continue_start(update.message, user, db_user, pending_args)
 
     return ConversationHandler.END
 
@@ -176,7 +185,7 @@ async def cancel_full_name_prompt(update: Update, context: ContextTypes.DEFAULT_
     """Ism-familiya kiritish majburiy — /cancel bilan chetlab bo'lmaydi."""
     await update.message.reply_html(
         "⚠️ Botdan foydalanish uchun avval to'liq ism-familiyangizni kiritish shart.\n\n"
-        "✍️ Masalan: <code>Shaxriyor Ismatov</code>"
+        "✍️ Masalan: <code>Aziz Karimov</code>"
     )
     return WAITING_FULL_NAME
 
