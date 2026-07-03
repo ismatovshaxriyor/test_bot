@@ -15,7 +15,7 @@ from utils import (
 from export import export_to_excel, export_to_pdf, export_chart, get_grade
 from config import ADMIN_ID
 from keyboards import (
-    main_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
+    profile_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
     test_active_stats_keyboard, confirm_end_keyboard, back_to_test_keyboard
 )
 from membership import membership_required
@@ -356,7 +356,7 @@ async def mytests_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📭 Siz hali test yaratmagansiz.\n\n"
             "\"📝 Test yaratish\" tugmasini bosing.",
-            reply_markup=main_menu_keyboard(update.effective_user.id)
+            reply_markup=profile_menu_keyboard()
         )
         return
 
@@ -445,7 +445,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📭 Siz hali test yechmadingiz.\n\n"
             "\"✍️ Test yechish\" tugmasini bosing.",
-            reply_markup=main_menu_keyboard(update.effective_user.id)
+            reply_markup=profile_menu_keyboard()
         )
         return
 
@@ -484,7 +484,7 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for sub in sorted(active_subs, key=lambda s: s.submitted_at, reverse=True)[:5]:
             text += f"  • <code>{sub.test.id}</code>: ⏳ natija test yakunlangach e'lon qilinadi\n"
 
-    await update.message.reply_html(text, reply_markup=main_menu_keyboard(update.effective_user.id))
+    await update.message.reply_html(text, reply_markup=profile_menu_keyboard())
 
 
 @membership_required

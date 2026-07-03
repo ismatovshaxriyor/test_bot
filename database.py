@@ -27,6 +27,10 @@ class User(BaseModel):
     telegram_id = BigIntegerField(unique=True)
     username = CharField(null=True)
     full_name = CharField()
+    # Foydalanuvchi /start yoki Profil bo'limida to'liq ism-familiyasini o'zi
+    # kiritganda True bo'ladi. False bo'lsa full_name hali Telegramdan olingan
+    # avtomatik nom — get_or_create_user shuni Telegram bilan sinxronlab turadi.
+    full_name_confirmed = BooleanField(default=False)
     is_admin = BooleanField(default=False)
     created_at = DateTimeField(default=datetime.now)
 
@@ -173,6 +177,22 @@ def _migrate_questions_unique_index():
         pass
 
 
+def _migrate_add_full_name_confirmed():
+    """Mavjud `users` jadvaliga `full_name_confirmed` ustunini xavfsiz qo'shish.
+
+    Mavjud foydalanuvchilar uchun default 0 (False) — ular hali to'liq ism-familiyasini
+    o'zi kiritmagan, shuning uchun keyingi /start yoki Profil ochishda so'raladi.
+    """
+    try:
+        cols = [row[1] for row in db.execute_sql("PRAGMA table_info(users)").fetchall()]
+        if "full_name_confirmed" not in cols:
+            db.execute_sql(
+                "ALTER TABLE users ADD COLUMN full_name_confirmed BOOLEAN DEFAULT 0"
+            )
+    except Exception:
+        pass
+
+
 def init_db():
     """Databaseni ishga tushirish"""
     db.connect()
@@ -180,6 +200,7 @@ def init_db():
     _migrate_unique_submissions()
     _migrate_add_test_source()
     _migrate_questions_unique_index()
+    _migrate_add_full_name_confirmed()
     print("✅ Database tayyor!")
 
 
@@ -196,7 +217,9 @@ def get_or_create_user(telegram_id: int, username: str = None, full_name: str = 
     if not created:
         if username:
             user.username = username
-        if full_name:
+        # full_name_confirmed bo'lsa, foydalanuvchi o'zi kiritgan ismni Telegramdan
+        # kelayotgan avtomatik nom bilan qayta yozib yubormaymiz.
+        if full_name and not user.full_name_confirmed:
             user.full_name = full_name
         user.save()
     return user

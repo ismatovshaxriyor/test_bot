@@ -13,7 +13,7 @@ def main_menu_keyboard(user_id=None):
             KeyboardButton("📝 Test yaratish"),
             KeyboardButton("✍️ Test yechish")
         ],
-        [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
+        [KeyboardButton("👤 Profil")],
     ]
     if user_id is not None:
         try:
@@ -25,6 +25,15 @@ def main_menu_keyboard(user_id=None):
                 ])
         except Exception:
             pass
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def profile_menu_keyboard():
+    """Profil bo'limi submenyusi — testlarim/statistikam + orqaga qaytish"""
+    keyboard = [
+        [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
+        [KeyboardButton("Ortga")],
+    ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
