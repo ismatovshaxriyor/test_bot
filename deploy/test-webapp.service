@@ -1,0 +1,15 @@
+[Unit]
+Description=Test Bot - WebApp API (FastAPI/uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/test_bot
+ExecStart=/home/ubuntu/test_bot/.venv/bin/uvicorn api:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
