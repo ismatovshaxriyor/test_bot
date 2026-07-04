@@ -503,21 +503,24 @@
             const optTexts = (item.options && typeof item.options === 'object') ? item.options : null;
             const isSixOptions = letters.length === 6;
             const current = typeof answers[idx] === 'string' ? answers[idx] : '';
+            const hasContent = !!(item.text) || !!(item.has_image && Number(testId) > 0);
 
             const qDiv = document.createElement('div');
             qDiv.className = 'p-2 rounded-lg mb-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition';
 
-            // Sarlavha: raqam + (matn/rasm)
+            // Sarlavha: raqam + (matn/rasm bo'lsa) — matn yo'q bo'lsa raqam va variantlar bitta qatorda turadi
             const head = document.createElement('div');
-            head.className = 'flex items-start gap-2';
+            head.className = hasContent ? 'flex items-start gap-2' : 'flex items-center gap-2 flex-wrap';
             const numSpan = document.createElement('span');
             numSpan.className = 'font-bold text-base shrink-0';
             numSpan.innerText = `${item.num || idx + 1}.`;
             head.appendChild(numSpan);
-            const bodyDiv = document.createElement('div');
-            bodyDiv.className = 'flex-1 min-w-0';
-            renderQuestionContent(bodyDiv, item);
-            head.appendChild(bodyDiv);
+            if (hasContent) {
+                const bodyDiv = document.createElement('div');
+                bodyDiv.className = 'flex-1 min-w-0';
+                renderQuestionContent(bodyDiv, item);
+                head.appendChild(bodyDiv);
+            }
             qDiv.appendChild(head);
 
             if (optTexts) {
@@ -550,7 +553,11 @@
             } else {
                 // Variant matni yo'q (eski testlar) -> kompakt harf qatori
                 const optsDiv = document.createElement('div');
-                optsDiv.className = isSixOptions ? 'flex gap-1 flex-wrap mt-1 ml-7' : 'flex gap-2 flex-wrap mt-1 ml-7';
+                if (hasContent) {
+                    optsDiv.className = isSixOptions ? 'flex gap-1 flex-wrap mt-1 ml-7' : 'flex gap-2 flex-wrap mt-1 ml-7';
+                } else {
+                    optsDiv.className = isSixOptions ? 'flex gap-1 flex-wrap' : 'flex gap-2 flex-wrap';
+                }
                 letters.forEach((opt) => {
                     const value = opt.toLowerCase();
                     const btn = document.createElement('button');
@@ -569,7 +576,11 @@
                     };
                     optsDiv.appendChild(btn);
                 });
-                qDiv.appendChild(optsDiv);
+                if (hasContent) {
+                    qDiv.appendChild(optsDiv);
+                } else {
+                    head.appendChild(optsDiv);
+                }
             }
 
             container.appendChild(qDiv);
