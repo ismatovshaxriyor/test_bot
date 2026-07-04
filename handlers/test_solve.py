@@ -10,11 +10,12 @@ from telegram.ext import (
 
 from peewee import IntegrityError
 
-from database import get_or_create_user, Test, TestSubmission, AdminTestWatch, Question
+from database import get_or_create_user, User, Test, TestSubmission, AdminTestWatch, Question
 from utils import check_answers, parse_simple_answers, latex_to_text
 from config import ADMIN_ID
 from keyboards import main_menu_keyboard
 from membership import membership_required
+from handlers.start import _ask_full_name, _is_valid_full_name
 from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 WAITING_TEST_CODE = 0
 WAITING_USER_ANSWERS = 1
 CHAT_SOLVING = 2
+WAITING_FULL_NAME_FOR_SOLVE = 3
 
 CHAT_SOLVE_BTN = "💬 Chatda yechish"
 
@@ -64,26 +66,77 @@ async def _notify_result(context, test, db_user, correct_count, total, percentag
             pass
 
 
+async def _prompt_test_code(message):
+    # Bosh menyu yashiriladi: faqat "Ortga" qoladi, shunda bo'lim ichida
+    # boshqa menyu tugmasini bosib adashilmaydi.
+    await message.reply_html(
+        "✍️ <b>Test yechish</b>\n\n"
+        "Hozir siz oddiy test yechish holatidasiz.\n\n"
+        "Test egasi sizga yuborgan <b>test raqamini (ID)</b> kiriting:\n\n"
+        "💡 Kod faqat raqamlardan iborat\n"
+        "(masalan: <code>15</code> yoki <code>42</code>)\n\n"
+        "❌ Bekor qilish: /cancel yoki Ortga",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Ortga")]], resize_keyboard=True)
+    )
+    return WAITING_TEST_CODE
+
+
 @membership_required
 async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yechishni boshlash"""
+    user = update.effective_user
+    db_user = get_or_create_user(
+        telegram_id=user.id,
+        username=user.username,
+        full_name=user.full_name or user.first_name
+    )
+
+    if not db_user.full_name_confirmed:
+        context.user_data["pending_solve_code"] = context.args[0].upper() if context.args else None
+        await _ask_full_name(update.message)
+        return WAITING_FULL_NAME_FOR_SOLVE
+
     # Argumentdan kodni olish
     if not context.args:
-        # Bosh menyu yashiriladi: faqat "Ortga" qoladi, shunda bo'lim ichida
-        # boshqa menyu tugmasini bosib adashilmaydi.
-        await update.message.reply_html(
-            "✍️ <b>Test yechish</b>\n\n"
-            "Hozir siz oddiy test yechish holatidasiz.\n\n"
-            "Test egasi sizga yuborgan <b>test raqamini (ID)</b> kiriting:\n\n"
-            "💡 Kod faqat raqamlardan iborat\n"
-            "(masalan: <code>15</code> yoki <code>42</code>)\n\n"
-            "❌ Bekor qilish: /cancel yoki Ortga",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Ortga")]], resize_keyboard=True)
-        )
-        return WAITING_TEST_CODE
+        return await _prompt_test_code(update.message)
 
     code = context.args[0].upper()
     return await process_test_code(update, context, code)
+
+
+async def receive_full_name_for_solve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test yechishdan oldin ism-familiya so'ralganda qabul qilish."""
+    text = (update.message.text or "").strip()
+
+    if not _is_valid_full_name(text):
+        await update.message.reply_html(
+            "❌ Noto'g'ri format. Ism va familiyangizni kamida 2 ta so'z bilan kiriting.\n\n"
+            "Masalan: <code>Aziz Karimov</code>"
+        )
+        return WAITING_FULL_NAME_FOR_SOLVE
+
+    normalized = " ".join(w.capitalize() for w in text.split())
+
+    user = update.effective_user
+    db_user = User.get(User.telegram_id == user.id)
+    db_user.full_name = normalized
+    db_user.full_name_confirmed = True
+    db_user.save()
+
+    await update.message.reply_html(f"✅ Rahmat, <b>{escape(normalized)}</b>!")
+
+    pending_code = context.user_data.pop("pending_solve_code", None)
+    if pending_code:
+        return await process_test_code(update, context, pending_code)
+    return await _prompt_test_code(update.message)
+
+
+async def remind_full_name_needed_for_solve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """WAITING_FULL_NAME_FOR_SOLVE holatida matndan boshqa narsa kelsa."""
+    await update.message.reply_html(
+        "✍️ Iltimos, ism-familiyangizni <b>matn</b> ko'rinishida yuboring."
+    )
+    return WAITING_FULL_NAME_FOR_SOLVE
 
 
 @membership_required
@@ -669,6 +722,16 @@ def get_handlers():
             ),
         ],
         states={
+            WAITING_FULL_NAME_FOR_SOLVE: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_full_name_for_solve
+                ),
+                MessageHandler(
+                    filters.ChatType.PRIVATE & ~filters.COMMAND,
+                    remind_full_name_needed_for_solve
+                ),
+            ],
             WAITING_TEST_CODE: [
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
