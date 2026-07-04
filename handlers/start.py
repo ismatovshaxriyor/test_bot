@@ -30,8 +30,9 @@ HELP_TEXT = """
 4. Pastdagi "🚀 Kengaytirilgan yechish" tugmasi bilan ilovaga o'ting
 
 <b>👤 Profil:</b>
-Ism-familyangiz va statistikangiz — shu yerdan "📋 Mening testlarim" va
-"📊 Mening statistikam" bo'limlariga o'tasiz.
+Ism-familyangiz va statistikangiz — shu yerdan "📋 Mening testlarim",
+"📊 Mening statistikam" bo'limlariga o'tasiz va "✏️ Ismni o'zgartirish"
+orqali ismingizni yangilashingiz mumkin.
 """
 
 
@@ -141,6 +142,18 @@ async def profile_entry_callback(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
+@membership_required
+async def edit_name_entry_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"✏️ Ismni o'zgartirish" tugmasi — Profil ichidan yangi ism so'raladi."""
+    context.user_data["name_prompt_source"] = "profile"
+    context.user_data["pending_start_args"] = []
+    await update.message.reply_html(
+        "✍️ <b>Yangi to'liq ism-familiyangizni kiriting.</b>\n\n"
+        "Masalan: <code>Aziz Karimov</code>"
+    )
+    return WAITING_FULL_NAME
+
+
 async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Foydalanuvchi yuborgan to'liq ism-familiyani qabul qilish va saqlash."""
     text = (update.message.text or "").strip()
@@ -219,6 +232,10 @@ def get_handlers():
             MessageHandler(
                 filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r'^👤 Profil$'),
                 profile_entry_callback,
+            ),
+            MessageHandler(
+                filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^✏️ Ismni o'zgartirish$"),
+                edit_name_entry_callback,
             ),
         ],
         states={

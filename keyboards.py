@@ -29,9 +29,10 @@ def main_menu_keyboard(user_id=None):
 
 
 def profile_menu_keyboard():
-    """Profil bo'limi submenyusi — testlarim/statistikam + orqaga qaytish"""
+    """Profil bo'limi submenyusi — testlarim/statistikam, ism tahriri + orqaga qaytish"""
     keyboard = [
         [KeyboardButton("📋 Mening testlarim"), KeyboardButton("📊 Mening statistikam")],
+        [KeyboardButton("✏️ Ismni o'zgartirish")],
         [KeyboardButton("Ortga")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
