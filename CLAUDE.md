@@ -28,6 +28,10 @@ Environment variables are in `.env` (see `.env.example`). Key vars: `BOT_TOKEN`,
 
 When deploying webapp changes: bump `WEBAPP_VERSION` in `.env` to bust Telegram's Mini App cache, then restart both processes.
 
+### Deployment (EC2)
+
+`deploy/` holds templates for the production host: `test-bot.service` and `test-webapp.service` (systemd units running `bot.py` and `uvicorn api:app` under `.venv`), plus `nginx.conf` (reverse-proxies `testbot.ismatov.uz` to the uvicorn port). They assume the repo lives at `/home/ubuntu/test_bot`; adjust paths before installing on a new host.
+
 ## Architecture
 
 ### Dual data model for tests
@@ -43,11 +47,17 @@ Both are created atomically in `services.create_rich_test()`. Any code that crea
 
 Three ways to create a test:
 
-- **Legacy** (answer key only): user sends a string like "abcabd" via bot chat → `handlers/test_create.py`
-- **AI/file**: user sends PDF/DOCX/image → Gemini extracts questions → fill missing answers/images → `handlers/test_ai_create.py`
+- **Legacy** (answer key only, no question text/images): either type a string like "abcabd" in chat, or use the `webapp/create.html` (simple) / `webapp/create_rasch.html` (rasch) Mini App forms — both paths are handled by `handlers/test_create.py`.
+- **AI/file**: user sends PDF/DOCX/image → Gemini extracts questions (`ai_extract.py`) → fill missing answers/images → `handlers/test_ai_create.py`
 - **Manual WebApp**: user fills form in `webapp/create_rich.html` → `POST /api/test/create_rich` → `api.py`
 
 All flows end at `services.create_rich_test()`.
+
+Two different mechanisms carry WebApp data back to the bot, and they're not interchangeable:
+- `create.html`/`create_rasch.html` call `Telegram.WebApp.sendData()`, which arrives as a normal chat update with `web_app_data` — caught by the `test_create` ConversationHandler (or, if outside a conversation, the global `WEB_APP_DATA` catch-all in `bot.py`).
+- `create_rich.html` does a direct authenticated `fetch()` POST to `/api/test/create_rich` in `api.py`, independent of the bot's update loop.
+
+`api.py`'s `create_rich_test_endpoint` reuses `ai_extract.normalize_extracted()` to re-validate manually-entered questions server-side — that function is not AI-extraction-only, it's the shared question-normalization/validation layer for both the AI and manual-WebApp flows.
 
 ### Question types
 

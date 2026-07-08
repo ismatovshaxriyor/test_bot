@@ -8,11 +8,12 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, CallbackQueryHandler, filters
 )
 
-from database import get_or_create_user, Test
+from database import get_or_create_user, User, Test
 from config import ADMIN_ID, WEBAPP_URL, WEBAPP_VERSION
 from keyboards import test_created_keyboard, main_menu_keyboard
 from membership import membership_required
 from utils import parse_simple_answers
+from handlers.start import _ask_full_name, _is_valid_full_name
 import json
 import re
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 # Conversation states
 CHOOSING_MODE = 0
 WAITING_ANSWERS = 1
+WAITING_FULL_NAME_FOR_CREATE = 2
 
 
 def _normalize_rasch_questions(questions: list) -> list:
@@ -84,24 +86,75 @@ def _normalize_rasch_questions(questions: list) -> list:
     return normalized
 
 
-@membership_required
-async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Test yaratish — avval turini tanlash.
-
-    Bosh menyu yashiriladi: o'rniga faqat tur-tanlash tugmalari ko'rsatiladi,
-    shunda foydalanuvchi bo'lim ichida adashib boshqa menyu tugmasini bosmaydi.
-    """
+async def _show_mode_choice(message):
+    """Test turini tanlash klaviaturasini ko'rsatish."""
     keyboard = ReplyKeyboardMarkup([
         [KeyboardButton("📊 Oddiy test"), KeyboardButton("📐 Rash test")],
         [KeyboardButton("Ortga")],
     ], resize_keyboard=True)
 
-    await update.message.reply_html(
+    await message.reply_html(
         "📝 <b>Test yaratish</b>\n\n"
         "Qaysi turdagi test yaratmoqchisiz?",
         reply_markup=keyboard
     )
+
+
+@membership_required
+async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test yaratish — avval to'liq ism tasdiqlanganini, so'ng turini tanlash.
+
+    Bosh menyu yashiriladi: o'rniga faqat tur-tanlash tugmalari ko'rsatiladi,
+    shunda foydalanuvchi bo'lim ichida adashib boshqa menyu tugmasini bosmaydi.
+    """
+    user = update.effective_user
+    db_user = get_or_create_user(
+        telegram_id=user.id,
+        username=user.username,
+        full_name=user.full_name or user.first_name
+    )
+
+    # Ism tasdiqlanmagan bo'lsa, test yaratishdan oldin so'raymiz — aks holda
+    # "Yaratuvchi" sifatida ismsiz/soxta nom bilan testlar yaratilib qolishi mumkin.
+    if not db_user.full_name_confirmed:
+        await _ask_full_name(update.message)
+        return WAITING_FULL_NAME_FOR_CREATE
+
+    await _show_mode_choice(update.message)
     return CHOOSING_MODE
+
+
+async def receive_full_name_for_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test yaratishdan oldin ism-familiya so'ralganda qabul qilish."""
+    text = (update.message.text or "").strip()
+
+    if not _is_valid_full_name(text):
+        await update.message.reply_html(
+            "❌ Noto'g'ri format. Ism va familiyangizni kamida 2 ta so'z bilan kiriting.\n\n"
+            "Masalan: <code>Aziz Karimov</code>"
+        )
+        return WAITING_FULL_NAME_FOR_CREATE
+
+    normalized = " ".join(w.capitalize() for w in text.split())
+
+    user = update.effective_user
+    db_user = User.get(User.telegram_id == user.id)
+    db_user.full_name = normalized
+    db_user.full_name_confirmed = True
+    db_user.save()
+
+    await update.message.reply_html(f"✅ Rahmat, <b>{escape(normalized)}</b>!")
+
+    await _show_mode_choice(update.message)
+    return CHOOSING_MODE
+
+
+async def remind_full_name_needed_for_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """WAITING_FULL_NAME_FOR_CREATE holatida matndan boshqa narsa kelsa."""
+    await update.message.reply_html(
+        "✍️ Iltimos, ism-familiyangizni <b>matn</b> ko'rinishida yuboring."
+    )
+    return WAITING_FULL_NAME_FOR_CREATE
 
 
 async def choose_mode_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -391,6 +444,16 @@ def get_handlers():
             ),
         ],
         states={
+            WAITING_FULL_NAME_FOR_CREATE: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_full_name_for_create
+                ),
+                MessageHandler(
+                    filters.ChatType.PRIVATE & ~filters.COMMAND,
+                    remind_full_name_needed_for_create
+                ),
+            ],
             CHOOSING_MODE: [
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,

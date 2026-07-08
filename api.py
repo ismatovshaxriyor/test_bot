@@ -198,8 +198,14 @@ def _validate_solver_access(test: Test, user_id: Optional[int]) -> None:
         raise HTTPException(status_code=403, detail="O'zingiz yaratgan testni yecha olmaysiz!")
 
     user = User.get_or_none(User.telegram_id == user_id)
-    if not user:
-        return
+    # Bot menyu tugmasi orqali WebApp'ni /start'siz ham ochish mumkin — shu yerda
+    # ham to'liq ism tasdiqlanganini tekshiramiz, aks holda ismsiz/soxta nom bilan
+    # (Telegram avtomatik first_name) natijalar yozilib qolishi mumkin.
+    if not user or not user.full_name_confirmed:
+        raise HTTPException(
+            status_code=403,
+            detail="Avval botda /start orqali to'liq ism-familiyangizni tasdiqlang.",
+        )
 
     existing = TestSubmission.select().where(
         (TestSubmission.test == test) & (TestSubmission.user == user)

@@ -607,7 +607,17 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             username=update.effective_user.username,
             full_name=update.effective_user.full_name
         )
-        
+
+        # WebApp bot menyu tugmasi orqali suhbat/holatdan tashqarida ham ochilishi
+        # mumkin — shu yerda ham ism tasdiqlanganini tekshiramiz (api.py'dagi
+        # /api/test/{id} tekshiruvi o'zgartirilgan klientdan himoya bermaydi).
+        if not db_user.full_name_confirmed:
+            await update.message.reply_text(
+                "❌ Avval to'liq ism-familiyangizni tasdiqlang: /start buyrug'ini yuboring.",
+                reply_markup=main_menu_keyboard(update.effective_user.id),
+            )
+            return ConversationHandler.END
+
         try:
             test = Test.get_by_id(int(test_id))
         except Test.DoesNotExist:
