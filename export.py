@@ -1,12 +1,7 @@
 """Test natijalarini fayllarga eksport qilish"""
 import os
 import re
-import shutil
-import subprocess
 import tempfile
-from functools import lru_cache
-from html import escape
-from pathlib import Path
 from typing import Dict
 from database import Test
 
@@ -22,51 +17,6 @@ def _clean_text(value) -> str:
     return _CONTROL_RE.sub("", str(value or ""))
 
 
-def _html_name(value) -> str:
-    """Foydalanuvchi ismini HTML uchun xavfsiz qilish (escape + control tozalash)."""
-    return escape(_clean_text(value))
-
-
-@lru_cache(maxsize=1)
-def _renderable_codepoints() -> frozenset:
-    """PDF shriftlari (outline) qamrab oladigan kod-nuqtalar to'plami.
-
-    NotoEmoji KIRITILMAYDI — u rangli (COLR) font, WeasyPrint uni bo'sh chiqaradi.
-    Shu to'plamdan tashqari belgilar (emoji, CJK, musiqa belgilari va h.k.) PDF'da
-    bo'sh/tofu chiqadi, shuning uchun ism tozalashda olib tashlanadi.
-    """
-    from fontTools.ttLib import TTFont
-    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
-    fonts = [
-        "NotoSans-Regular.ttf", "NotoSans-Bold.ttf", "NotoSans-Italic.ttf",
-        "NotoSansArabic-Regular.ttf", "NotoSansHebrew-Regular.ttf",
-        "NotoSansDevanagari-Regular.ttf", "NotoSansThai-Regular.ttf",
-        "NotoSansMath-Regular.ttf",
-    ]
-    cps = set()
-    for fn in fonts:
-        p = os.path.join(base, fn)
-        if os.path.exists(p):
-            try:
-                cps.update(TTFont(p, lazy=True).getBestCmap().keys())
-            except Exception:
-                pass
-    return frozenset(cps)
-
-
-def _pdf_safe_name(value) -> str:
-    """Ismni PDF'da render bo'ladigan belgilarga qisqartirish.
-
-    ASCII, bo'shliq va bundle shriftlar qamrab oladigan belgilar qoldiriladi;
-    qolganlari (emoji, CJK, musiqa belgilari, ZWJ va h.k.) olib tashlanadi.
-    Hammasi olib tashlansa — bo'sh satr qaytadi (chaqiruvchi '—' ga almashtiradi).
-    """
-    text = _clean_text(value)
-    if not text:
-        return ""
-    renderable = _renderable_codepoints()
-    kept = [ch for ch in text if ord(ch) < 0x80 or ch.isspace() or ord(ch) in renderable]
-    return re.sub(r"\s+", " ", "".join(kept)).strip()
 
 
 def get_grade(score: float) -> str:
@@ -245,328 +195,249 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     return filepath
 
 
-def _build_results_html(stats: Dict, test: Test, name_fn) -> str:
-    """Natijalar jadvali HTML'ini quradi. Ism uchun name_fn(value) ishlatiladi."""
-    rasch_mode = test.scoring_mode == "rasch"
-    submissions = stats['submissions']
-    mode_text = "Rash modeli" if rasch_mode else "Oddiy"
+def _register_pdf_font() -> str:
+    """Unicode font (o'zbek harflari uchun) ro'yxatdan o'tkazish.
 
-    # Daraja ranglari
-    grade_colors = {
-        'A+': '#22b14c',
-        'A':  '#7bc67e',
-        'B+': '#fff200',
-        'B':  '#ffd966',
-        'C+': '#f4b183',
-        'C':  '#ff7f7f',
-        '-':  '#d9d9d9',
-    }
-
-    # Hujayra uslublari: faqat tekislash inline (padding/border <style>'da — LibreOffice
-    # ularni e'tiborsiz qoldiradi, lekin inline berilsa ustun joylashuvini buzadi).
-    _td_c = "text-align:center;"
-    _td_l = ""
-
-    # Jadval satrlari — har bir test turi uchun Ball + Daraja
-    rows_html = ""
-    for idx, sub in enumerate(submissions):
-        num = idx + 1
-        name = name_fn(sub['user'])
-
-        ball = round(sub.get('rasch_normalized', sub['percentage']) if rasch_mode else sub['percentage'], 1)
-
-        if rasch_mode:
-            grade = get_grade(ball)
-            row_bg = grade_colors.get(grade, '#ffffff')
-            grade_cell = f'<td style="{_td_c}font-weight:bold;">{grade}</td>'
-        else:
-            row_bg = '#f5f5f5' if idx % 2 == 1 else '#ffffff'
-            grade_cell = ''
-
-        rows_html += f"""
-        <tr style="background:{row_bg};">
-            <td style="{_td_c}color:#6b7280;">{num}</td>
-            <td style="{_td_l}">{name}</td>
-            <td style="{_td_c}">{sub['correct']}</td>
-            <td style="{_td_c}">{sub['total']}</td>
-            <td style="{_td_c}">{ball}</td>
-            {grade_cell}
-        </tr>"""
-
-    _th = "background:#4f46e5;color:#ffffff;font-weight:bold;text-align:center;"
-    if rasch_mode:
-        _cols = ["#", "Ism", "To'g'ri", "Jami", "Ball", "Daraja"]
-    else:
-        _cols = ["#", "Ism", "To'g'ri", "Jami", "Ball"]
-    header_cells = "".join(
-        f'<th style="{_th}{"text-align:left;" if c == "Ism" else ""}">{c}</th>'
-        for c in _cols
-    )
-
-    # ⚠️  NotoSans-Regular ni @font-face orqali yuklamaymiz!
-    # (Pango bilan glyph-remapping muammosi: '10'→'0 .' kabi)
-    # Faqat maxsus script fontlari o'z unicode-range bilan yuklanadi,
-    # asosiy matn uchun sistema fontlari (DejaVu, Noto) ishlatiladi.
-
-    _base_dir = os.path.dirname(os.path.abspath(__file__))
-    _fd = os.path.join(_base_dir, 'fonts')
-
-    def _font_face(family, filename, unicode_range, weight='normal', style='normal'):
-        path = os.path.join(_fd, filename)
-        if not os.path.exists(path):
-            return ''
-        # CSS unicode-range diapazon oxirida U+ bo'lmasligi kerak: U+1F300-1F9FF
-        # (U+1F300-U+1F9FF — noto'g'ri, WeasyPrint butun qatorni rad etadi)
-        unicode_range = unicode_range.replace('-U+', '-')
-        # Yo'lda bo'sh joy bo'lishi mumkin ("Personal Projects") — to'g'ri file:// URI
-        font_uri = Path(path).as_uri()
-        return f"""
-        @font-face {{
-            font-family: '{family}';
-            src: url('{font_uri}') format('truetype');
-            font-weight: {weight};
-            font-style: {style};
-            unicode-range: {unicode_range};
-        }}"""
-
-    font_css_parts = [
-        # Matematik/fancy-text Unicode (𝐹𝑎𝑧𝑜, 𝒮𝒽, 𝑺𝒉...)
-        _font_face('NotoMath', 'NotoSansMath-Regular.ttf',
-            'U+1D400-U+1D7FF, U+2100-U+214F, U+2200-U+22FF, U+27C0-U+27FF, U+1D100-U+1D1FF'),
-
-        # Arab yozuvi
-        _font_face('NotoArabic', 'NotoSansArabic-Regular.ttf',
-            'U+0600-U+06FF, U+0750-U+077F, U+08A0-U+08FF, U+FB50-U+FBFF, U+FE70-U+FEFF'),
-        _font_face('NotoArabic', 'NotoSansArabic-Bold.ttf',
-            'U+0600-U+06FF', weight='bold'),
-
-        # Ibroniy (Hebrew)
-        _font_face('NotoHebrew', 'NotoSansHebrew-Regular.ttf',
-            'U+0590-U+05FF, U+FB1D-U+FB4F'),
-
-        # Hind (Devanagari)
-        _font_face('NotoDevanagari', 'NotoSansDevanagari-Regular.ttf',
-            'U+0900-U+097F, U+1CD0-U+1CFF, U+A8E0-U+A8FF'),
-
-        # Tailand
-        _font_face('NotoThai', 'NotoSansThai-Regular.ttf',
-            'U+0E00-U+0E7F'),
-
-        # Emoji
-        _font_face('NotoEmoji', 'NotoEmoji-Regular.ttf',
-            'U+1F300-U+1F9FF, U+1FA00-U+1FAFF, U+2600-U+27BF, U+1F1E0-U+1F1FF'),
-    ]
-
-    math_font_css = '\n'.join(p for p in font_css_parts if p)
-
-    # Har bir maxsus family ni font-family stack ga qo'shamiz
-    # Sistema fontlari (DejaVu, Noto) BIRINCHI — asosiy rendering ular orqali
-    font_family = (
-        "'Noto Sans', 'DejaVu Sans', "       # asosiy (sistema)
-        "'NotoMath', "                        # math unicode
-        "'NotoArabic', "                      # arab
-        "'NotoHebrew', "                      # ibroniy
-        "'NotoDevanagari', "                  # hind
-        "'NotoThai', "                        # tailand
-        "'NotoEmoji', "                       # emoji
-        "'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', "
-        "Arial, sans-serif"
-    )
-
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-  {math_font_css}
-
-  @page {{
-    size: A4;
-    margin: 15mm 12mm;
-  }}
-
-  * {{
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    letter-spacing: 0;
-    word-spacing: 0;
-  }}
-
-  body {{
-    font-family: {font_family};
-    font-size: 10pt;
-    color: #1a1a1a;
-    text-rendering: optimizeLegibility;
-  }}
-
-  .header {{
-    text-align: center;
-    margin-bottom: 10px;
-  }}
-
-  .header h1 {{
-    font-size: 16pt;
-    font-weight: bold;
-    color: #1a1a1a;
-    margin-bottom: 4px;
-  }}
-
-  .meta {{
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    font-size: 9pt;
-    color: #555;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-  }}
-
-  .meta span {{
-    background: #f0f4ff;
-    border: 1px solid #c7d5f5;
-    border-radius: 5px;
-    padding: 2px 8px;
-  }}
-
-  table {{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9.5pt;
-    table-layout: fixed;
-  }}
-
-  thead th {{
-    background: #4472c4;
-    color: #ffffff;
-    font-weight: bold;
-    padding: 6px 8px;
-    border: 1px solid #3560b0;
-    text-align: center;
-    white-space: nowrap;
-  }}
-
-  thead th:nth-child(2) {{
-    text-align: left;
-    width: 50%;
-  }}
-
-  thead th:not(:nth-child(2)) {{
-    width: auto;
-  }}
-
-  tbody td {{
-    padding: 5px 8px;
-    border: 1px solid #d0d0d0;
-    vertical-align: middle;
-    white-space: nowrap;     /* raqamlar bo'linmaydi */
-  }}
-
-  /* Ism ustuni uzun bo'lsa wrap bo'lsin */
-  tbody td:nth-child(2) {{
-    white-space: normal;
-    word-break: break-word;
-  }}
-
-  tbody tr:nth-child(even) {{
-    background: #f8f9fa;
-  }}
-</style>
-</head>
-<body style="font-family:{font_family};color:#1f2937;">
-
-<h1 style="text-align:center;color:#312e81;font-size:18pt;font-weight:bold;margin:0 0 3px;">Test natijasi &#8212; #{test.id}</h1>
-<div style="height:3px;width:90px;background:#4f46e5;margin:0 auto 12px;border-radius:2px;"></div>
-
-<div style="text-align:center;margin-bottom:14px;">
-  <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Ishtirokchilar: <b>{stats['total_submissions']}</b></span>
-  <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Savollar: <b>{test.total_questions}</b></span>
-  <span style="display:inline-block;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;padding:3px 11px;margin:0 3px;font-size:10pt;">Baholash: <b>{mode_text}</b></span>
-</div>
-
-<table width="80%" align="center" cellpadding="9" cellspacing="0" style="border-collapse:collapse;font-size:9.5pt;width:80%;margin:0 auto;">
-  <thead>
-    <tr>{header_cells}</tr>
-  </thead>
-  <tbody>
-    {rows_html}
-  </tbody>
-</table>
-
-{"" if not rasch_mode else '''<p style="margin-top:12px;font-size:8.5pt;color:#6b7280;">
-  <b style="color:#4338ca;">Daraja shkalasi:</b>
-  70+ &#8594; A+ &nbsp;&middot;&nbsp; 65&#8211;69.9 &#8594; A &nbsp;&middot;&nbsp; 60&#8211;64.9 &#8594; B+ &nbsp;&middot;&nbsp; 55&#8211;59.9 &#8594; B &nbsp;&middot;&nbsp; 50&#8211;54.9 &#8594; C+ &nbsp;&middot;&nbsp; 46&#8211;49.9 &#8594; C
-</p>'''}
-
-</body>
-</html>"""
-
-    return html
-
-
-def _find_soffice() -> str:
-    """LibreOffice (soffice) binarini topish."""
-    env_path = os.getenv("SOFFICE_PATH")
-    if env_path and os.path.exists(env_path):
-        return env_path
-    for name in ("soffice", "libreoffice"):
-        found = shutil.which(name)
-        if found:
-            return found
-    mac_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-    return mac_path if os.path.exists(mac_path) else None
-
-
-def _html_to_pdf_via_libreoffice(html: str, out_path: str) -> bool:
-    """HTML'ni LibreOffice orqali PDF'ga aylantirish (rangli emoji, CJK — asl holicha).
-
-    Muvaffaqiyatli bo'lsa True qaytaradi. LibreOffice topilmasa/xato bo'lsa False.
+    Loyihadagi fonts/ papkasidan NotoSans ishlatiladi.
+    Topilmasa — sistema fontlari (DejaVuSans, Arial Unicode) sinab ko'riladi.
+    Oxirgi fallback: Helvetica (faqat ASCII).
     """
-    soffice = _find_soffice()
-    if not soffice:
-        return False
-    with tempfile.TemporaryDirectory() as tmp:
-        in_html = os.path.join(tmp, "results.html")
-        with open(in_html, "w", encoding="utf-8") as f:
-            f.write(html)
-        # Har konversiya uchun alohida profil — bir vaqtdagi ishlovlarda lock bo'lmaydi
-        profile = os.path.join(tmp, "profile")
-        try:
-            subprocess.run(
-                [
-                    soffice, "--headless", "--norestore", "--nolockcheck",
-                    f"-env:UserInstallation=file://{profile}",
-                    "--convert-to", "pdf", "--outdir", tmp, in_html,
-                ],
-                capture_output=True, timeout=90,
-            )
-        except Exception:
-            return False
-        produced = os.path.join(tmp, "results.pdf")
-        if not os.path.exists(produced):
-            return False
-        shutil.copy(produced, out_path)
-        return True
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+
+    candidates = [
+        # Loyiha ichidagi fontlar (birinchi ustunlik)
+        os.path.join(base_dir, "NotoSans-Regular.ttf"),
+        # Linux (Docker)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # macOS
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont("UZ", path))
+                return "UZ"
+            except Exception:
+                pass
+    return "Helvetica"  # fallback — faqat ASCII ishlaydi
+
+
+def _register_pdf_bold_font() -> str:
+    """Bold font ro'yxatdan o'tkazish (sarlavhalar uchun)."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+
+    candidates = [
+        os.path.join(base_dir, "NotoSans-Bold.ttf"),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont("UZ-Bold", path))
+                return "UZ-Bold"
+            except Exception:
+                pass
+    return "Helvetica-Bold"
 
 
 def export_to_pdf(stats: Dict, test: Test) -> str:
-    """Natijalarni PDF'ga eksport qilish.
+    """Test natijalarini reportlab yordamida PDF formatda generatsiya qiladi.
 
-    Asosiy: LibreOffice (rangli emoji, CJK, matematik harflar — asl holicha).
-    Zaxira (LibreOffice yo'q): WeasyPrint — emoji/CJK render bo'lmaydi, shuning uchun
-    render bo'lmaydigan belgilar ismdan olib tashlanadi.
+    Args:
+        stats: get_question_stats() dan qaytgan statistika dict.
+        test: Test obyekti (test.id, test.total_questions, test.scoring_mode).
+
+    Returns:
+        str: yaratilgan PDF faylning to'liq yo'li.
     """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+    )
+
+    font = _register_pdf_font()
+    bold_font = _register_pdf_bold_font()
+
+    rasch_mode = test.scoring_mode == "rasch"
+    mode_text = "Rash modeli" if rasch_mode else "Oddiy"
+
+    # Chiqish faylini yaratish
     filepath = os.path.join(tempfile.gettempdir(), f"test_{test.id}.pdf")
 
-    # 1) Sodiq render — LibreOffice
-    html_full = _build_results_html(stats, test, lambda u: _html_name(u) or "—")
-    if _html_to_pdf_via_libreoffice(html_full, filepath):
-        return filepath
+    # PDF hujjatini sozlash
+    doc = SimpleDocTemplate(
+        filepath,
+        pagesize=A4,
+        title=f"Test {test.id}",
+        topMargin=40,
+        bottomMargin=30,
+        leftMargin=35,
+        rightMargin=35,
+    )
+    styles = getSampleStyleSheet()
 
-    # 2) Zaxira — WeasyPrint (render bo'lmaydigan belgilarni olib tashlaymiz)
-    from weasyprint import HTML
-    html_safe = _build_results_html(stats, test, lambda u: escape(_pdf_safe_name(u)) or "—")
-    HTML(string=html_safe).write_pdf(filepath)
+    # Custom stillar
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Title'],
+        fontName=bold_font,
+        fontSize=16,
+        textColor=colors.HexColor("#312E81"),
+        alignment=TA_CENTER,
+        spaceAfter=4,
+    )
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Normal'],
+        fontName=font,
+        fontSize=10,
+        textColor=colors.HexColor("#4338CA"),
+        alignment=TA_CENTER,
+        spaceAfter=14,
+    )
+    grade_note_style = ParagraphStyle(
+        'GradeNote',
+        parent=styles['Normal'],
+        fontName=font,
+        fontSize=7,
+        textColor=colors.HexColor("#6B7280"),
+        spaceBefore=10,
+    )
+
+    # Sarlavha va umumiy ma'lumot
+    elems = [
+        Paragraph(f"Test #{test.id} — natijalar", title_style),
+        Paragraph(
+            f"Ishtirokchilar: <b>{stats['total_submissions']}</b> &nbsp;·&nbsp; "
+            f"Savollar: <b>{test.total_questions}</b> &nbsp;·&nbsp; "
+            f"Baholash: <b>{mode_text}</b>",
+            subtitle_style,
+        ),
+        Spacer(1, 6),
+    ]
+
+    # Daraja ranglari (rasch mode uchun)
+    grade_bg_colors = {
+        'A+': colors.HexColor("#22B14C"),
+        'A':  colors.HexColor("#7BC67E"),
+        'B+': colors.HexColor("#FFF200"),
+        'B':  colors.HexColor("#FFD966"),
+        'C+': colors.HexColor("#F4B183"),
+        'C':  colors.HexColor("#FF7F7F"),
+        '-':  colors.HexColor("#D9D9D9"),
+    }
+
+    # Jadval sarlavhalari
+    if rasch_mode:
+        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball", "Daraja"]
+    else:
+        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball"]
+    rows = [header_row]
+
+    # Natijalar satrlari
+    for i, sub in enumerate(stats['submissions'], 1):
+        name = _clean_text(sub['user']) or "—"
+        ball = round(
+            sub.get('rasch_normalized', sub['percentage'])
+            if rasch_mode else sub['percentage'],
+            1,
+        )
+        row = [str(i), name, str(sub['correct']), str(sub['total']), f"{ball}"]
+        if rasch_mode:
+            grade = get_grade(ball)
+            row.append(grade)
+        rows.append(row)
+
+    # Ustun kengliklari (A4 = 595pt, chapdan 35+35 = 70pt margin)
+    avail_width = A4[0] - 70
+    if rasch_mode:
+        col_widths = [
+            avail_width * 0.06,   # #
+            avail_width * 0.44,   # Ism
+            avail_width * 0.12,   # To'g'ri
+            avail_width * 0.10,   # Jami
+            avail_width * 0.14,   # Ball
+            avail_width * 0.14,   # Daraja
+        ]
+    else:
+        col_widths = [
+            avail_width * 0.07,   # #
+            avail_width * 0.53,   # Ism
+            avail_width * 0.13,   # To'g'ri
+            avail_width * 0.12,   # Jami
+            avail_width * 0.15,   # Ball
+        ]
+
+    table = Table(rows, repeatRows=1, hAlign="CENTER", colWidths=col_widths)
+
+    # Asosiy jadval stili
+    style_commands = [
+        # Font
+        ("FONTNAME",       (0, 0), (-1, 0),  bold_font),
+        ("FONTNAME",       (0, 1), (-1, -1), font),
+        ("FONTSIZE",       (0, 0), (-1, 0),  9),
+        ("FONTSIZE",       (0, 1), (-1, -1), 9),
+        # Header fon va rang
+        ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#4472C4")),
+        ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
+        # Grid
+        ("GRID",           (0, 0), (-1, -1), 0.4, colors.HexColor("#D0D0D0")),
+        # Tekislash
+        ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN",          (1, 0), (1, -1),  "LEFT"),   # Ism ustuni chapga
+        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+        # Padding
+        ("TOPPADDING",     (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
+    ]
+
+    # Qator ranglari
+    if rasch_mode:
+        # Rasch: daraja bo'yicha rang berish
+        for i, sub in enumerate(stats['submissions'], 1):
+            ball = round(
+                sub.get('rasch_normalized', sub['percentage']),
+                1,
+            )
+            grade = get_grade(ball)
+            bg = grade_bg_colors.get(grade)
+            if bg:
+                style_commands.append(
+                    ("BACKGROUND", (0, i), (-1, i), bg)
+                )
+    else:
+        # Oddiy: zebra qatorlar
+        style_commands.append(
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#F2F4F4")])
+        )
+
+    table.setStyle(TableStyle(style_commands))
+    elems.append(table)
+
+    # Rasch daraja shkalasi izohi
+    if rasch_mode:
+        elems.append(Paragraph(
+            "<b>Daraja shkalasi:</b> "
+            "70+ → A+ · 65–69.9 → A · 60–64.9 → B+ · "
+            "55–59.9 → B · 50–54.9 → C+ · 46–49.9 → C",
+            grade_note_style,
+        ))
+
+    # PDF yaratish
+    doc.build(elems)
     return filepath
 
 

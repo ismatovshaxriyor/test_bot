@@ -42,16 +42,15 @@ def test_created_keyboard(test_code: str, bot_username: str = "", total_question
     """Test yaratilgandan keyin tugmalar"""
     from urllib.parse import quote
 
+    deep_link = f"https://t.me/{bot_username}?start={test_code}" if bot_username else ""
+
     share_text = (
         f"🎯 Test Yechish Taklifi\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📝 Test kodi: {test_code}\n"
         f"❓ Savollar: {total_questions} ta\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📲 Qanday yechish:\n"
-        f"1️⃣ @{bot_username} botiga o'ting\n"
-        f"2️⃣ ✍️ Test yechish tugmasini bosing\n"
-        f"3️⃣ Kodini kiriting: {test_code}\n\n"
+        f"👉 Boshlash: {deep_link}\n\n"
         f"🍀 Omad tilaymiz!"
     )
     share_url = f"https://t.me/share/url?url=&text={quote(share_text)}"
@@ -60,6 +59,14 @@ def test_created_keyboard(test_code: str, bot_username: str = "", total_question
         [InlineKeyboardButton("📤 Ulashish", url=share_url)],
         [InlineKeyboardButton("📊 Statistika", callback_data=f"stats_{test_code}")],
         [InlineKeyboardButton("🔚 Yakunlash", callback_data=f"end_{test_code}")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def deeplink_test_keyboard(test_code: str):
+    """Deep link orqali test yechishni boshlash uchun inline tugma."""
+    keyboard = [
+        [InlineKeyboardButton("🚀 Testni boshlash", callback_data=f"deeplink_solve_{test_code}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 

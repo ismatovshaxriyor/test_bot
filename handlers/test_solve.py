@@ -81,6 +81,133 @@ async def _prompt_test_code(message):
     return WAITING_TEST_CODE
 
 
+async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Deep link tugmasi orqali test yechishni boshlash.
+
+    Foydalanuvchi /start CODE orqali kelganda, start.py test preview va
+    'Testni boshlash' inline tugmasini ko'rsatadi. Shu tugma bosilganda
+    bu handler ishga tushadi va test yechish oqimini boshlaydi.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    # callback_data: deeplink_solve_42
+    code = query.data.rsplit("_", 1)[-1]
+    user = update.effective_user
+    chat_id = user.id
+
+    if not code.isdigit():
+        await context.bot.send_message(chat_id, "❌ Noto'g'ri test kodi!")
+        return ConversationHandler.END
+
+    # Test topish
+    try:
+        test = Test.get_by_id(int(code))
+    except Test.DoesNotExist:
+        await context.bot.send_message(chat_id, f"❌ '{code}' kodli test topilmadi!")
+        return ConversationHandler.END
+
+    # Test faolmi?
+    if not test.is_active:
+        await context.bot.send_message(
+            chat_id, "❌ Bu test allaqachon yakunlangan!",
+            reply_markup=main_menu_keyboard(user.id)
+        )
+        return ConversationHandler.END
+
+    db_user = get_or_create_user(
+        telegram_id=user.id,
+        username=user.username,
+        full_name=user.full_name or user.first_name
+    )
+
+    # Ism tasdiqlanganmi?
+    if not db_user.full_name_confirmed:
+        context.user_data["pending_solve_code"] = code
+        await context.bot.send_message(
+            chat_id,
+            "✍️ <b>Botdan foydalanish uchun to'liq ism familiyangizni kiriting.</b>\n\n"
+            "Masalan: <code>Aziz Karimov</code>",
+            parse_mode="HTML",
+        )
+        return WAITING_FULL_NAME_FOR_SOLVE
+
+    # O'zi yaratgan testini yecha olmasligini tekshirish
+    if test.creator.telegram_id == user.id:
+        await context.bot.send_message(
+            chat_id, "❌ O'zingiz yaratgan testni yecha olmaysiz!",
+            reply_markup=main_menu_keyboard(user.id)
+        )
+        return ConversationHandler.END
+
+    # Avval yechganligini tekshirish
+    existing = TestSubmission.select().where(
+        (TestSubmission.test == test) &
+        (TestSubmission.user == db_user)
+    ).first()
+
+    if existing:
+        await context.bot.send_message(
+            chat_id, "⚠️ Siz bu testni allaqachon ishlagansiz!",
+            reply_markup=main_menu_keyboard(user.id)
+        )
+        return ConversationHandler.END
+
+    # Contextga test ma'lumotini saqlash
+    context.user_data['current_test'] = test
+    context.user_data['db_user'] = db_user
+
+    # Solve UI ko'rsatish (process_test_code bilan bir xil)
+    solve_path = "/solve_rasch" if test.scoring_mode == "rasch" else "/solve"
+    is_mixed = bool(test.correct_answers) and test.correct_answers.startswith("[{")
+    has_questions = Question.select().where(Question.test == test).exists()
+
+    kb_rows = [[KeyboardButton("🚀 Interaktiv yechish", web_app=WebAppInfo(url=f"{WEBAPP_URL}{solve_path}?test_id={test.id}&v={WEBAPP_VERSION}"))]]
+    if has_questions:
+        kb_rows.append([KeyboardButton(CHAT_SOLVE_BTN)])
+    kb_rows.append([KeyboardButton("Ortga")])
+    keyboard = ReplyKeyboardMarkup(kb_rows, resize_keyboard=True)
+
+    if is_mixed and has_questions:
+        await context.bot.send_message(
+            chat_id,
+            f"📝 <b>Test: {code}</b>\n\n"
+            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"Ikki usuldan birini tanlang:\n"
+            f"• <b>🚀 Interaktiv yechish</b> — ilova (formulalar chiroyli ko'rinadi)\n"
+            f"• <b>{CHAT_SOLVE_BTN}</b> — savollar shu chatda birma-bir ko'rsatiladi\n\n"
+            f"❌ Bekor qilish: /cancel yoki Ortga",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+    elif is_mixed:
+        await context.bot.send_message(
+            chat_id,
+            f"📝 <b>Test: {code}</b>\n\n"
+            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"⚠️ Bu testda ochiq savollar bor — uni faqat ilova orqali yechish mumkin.\n"
+            f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
+            f"❌ Bekor qilish: /cancel yoki Ortga",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+    else:
+        await context.bot.send_message(
+            chat_id,
+            f"📝 <b>Test: {code}</b>\n\n"
+            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"Javoblaringizni ikki usuldan birida kiriting:\n"
+            f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
+            f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
+            f"Yoki pastdagi maxsus tugma orqali ilovada ishlashingiz mumkin\n\n"
+            f"❌ Bekor qilish: /cancel yoki Ortga",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+
+    return WAITING_USER_ANSWERS
+
+
 @membership_required
 async def solve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Testni yechishni boshlash"""
@@ -730,6 +857,7 @@ def get_handlers():
                 filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^(✍️ Test yechish|✍️ Oddiy test yechish)$"),
                 solve_command
             ),
+            CallbackQueryHandler(deeplink_solve_callback, pattern=r"^deeplink_solve_\d+$"),
         ],
         states={
             WAITING_FULL_NAME_FOR_SOLVE: [
@@ -774,6 +902,7 @@ def get_handlers():
             CommandHandler("cancel", cancel_solve, filters=filters.ChatType.PRIVATE),
         ],
         allow_reentry=True,
+        per_callback_query_data=False,
     )
 
     return [conversation_handler]

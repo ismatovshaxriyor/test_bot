@@ -35,10 +35,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                                     f"📋 <b>Test kodi:</b> <code>{code}</code>\n"
                                     f"❓ <b>Savollar:</b> {test.total_questions} ta\n\n"
                                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                                    f"📲 <b>Qanday yechish:</b>\n"
-                                    f"1️⃣ @{bot_username} botiga o'ting\n"
-                                    f"2️⃣ <b>✍️ Test yechish</b> tugmasini bosing\n"
-                                    f"3️⃣ Kodini kiriting: <code>{code}</code>\n\n"
+                                    f"👉 <b>Boshlash:</b> https://t.me/{bot_username}?start={code}\n\n"
                                     f"🍀 Omad tilaymiz!"
                                 ),
                                 parse_mode="HTML"

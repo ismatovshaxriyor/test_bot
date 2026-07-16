@@ -7,7 +7,7 @@ from telegram.ext import (
 
 from database import get_or_create_user, User, Test, TestSubmission
 from config import ADMIN_ID
-from keyboards import main_menu_keyboard, profile_menu_keyboard
+from keyboards import main_menu_keyboard, profile_menu_keyboard, deeplink_test_keyboard
 from membership import membership_required
 
 # Conversation state — ism-familiya kiritilishini kutish
@@ -59,15 +59,31 @@ def _first_name_of(full_name: str, fallback: str = "") -> str:
     return parts[0] if parts else (fallback or "")
 
 
-async def _continue_start(message, user, db_user, start_args):
+async def _continue_start(message, user, db_user, start_args, context=None):
     """Ism tasdiqlangandan keyin (yoki darrov) asosiy /start oqimi."""
     if start_args and str(start_args[0]).isdigit():
         test_code = start_args[0]
-        await message.reply_html(
-            f"🎯 <b>{test_code} - testni yechish uchun keldingiz!</b>\n\n"
-            f"Testni boshlash uchun quyidagi menyudan <b>✍️ Test yechish</b> tugmasini bosing va <code>{test_code}</code> kodini yuboring.",
-            reply_markup=main_menu_keyboard(user.id)
-        )
+        # Test borligini tekshirish
+        try:
+            from database import Test
+            test = Test.get_by_id(int(test_code))
+            if not test.is_active:
+                await message.reply_html(
+                    f"❌ <b>{test_code}</b> kodli test allaqachon yakunlangan!",
+                    reply_markup=main_menu_keyboard(user.id)
+                )
+                return
+            await message.reply_html(
+                f"🎯 <b>Test #{test_code}</b>\n\n"
+                f"❓ Savollar: {test.total_questions} ta\n\n"
+                f"👇 Boshlash uchun tugmani bosing:",
+                reply_markup=deeplink_test_keyboard(test_code)
+            )
+        except Exception:
+            await message.reply_html(
+                f"❌ <b>{test_code}</b> kodli test topilmadi!",
+                reply_markup=main_menu_keyboard(user.id)
+            )
         return
 
     display_name = _first_name_of(db_user.full_name, user.first_name)
@@ -117,7 +133,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _ask_full_name(update.message)
         return WAITING_FULL_NAME
 
-    await _continue_start(update.message, user, db_user, context.args)
+    await _continue_start(update.message, user, db_user, context.args, context)
     return ConversationHandler.END
 
 
@@ -181,7 +197,7 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if source == "profile":
         await _send_profile(update.message, user, db_user)
     else:
-        await _continue_start(update.message, user, db_user, pending_args)
+        await _continue_start(update.message, user, db_user, pending_args, context)
 
     return ConversationHandler.END
 
