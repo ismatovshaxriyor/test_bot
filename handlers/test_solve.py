@@ -902,7 +902,6 @@ def get_handlers():
             CommandHandler("cancel", cancel_solve, filters=filters.ChatType.PRIVATE),
         ],
         allow_reentry=True,
-        per_callback_query_data=False,
     )
 
     return [conversation_handler]
