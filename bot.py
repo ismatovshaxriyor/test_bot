@@ -8,7 +8,7 @@ from telegram import BotCommand
 from telegram.ext import Application
 
 from config import BOT_TOKEN, ADMIN_ID, BACKUP_INTERVAL_HOURS
-from database import init_db
+from database import init_db, SystemSetting
 from backup import send_backup
 
 # Handlerlarni import qilish
@@ -46,25 +46,48 @@ async def global_cancel_handler(update, context):
 async def backup_scheduler(application):
     """Belgilangan vaqt oralig'ida adminga avtomatik DB zaxirasini yuboradi.
 
-    Birinchi zaxira bir interval o'tgach yuboriladi (bot qayta ishga tushganda
-    darrov spam bo'lmasligi uchun).
+    Sozlamalarni (yoqilganlik holati va interval) har safar DB dan o'qiydi.
     """
-    if not ADMIN_ID or BACKUP_INTERVAL_HOURS <= 0:
-        logger.info("Avtomatik zaxira o'chirilgan (ADMIN_ID yoki interval yo'q)")
+    if not ADMIN_ID:
+        logger.info("ADMIN_ID topilmadi, avtomatik zaxira o'chirilgan")
         return
 
-    interval_seconds = BACKUP_INTERVAL_HOURS * 3600
-    logger.info("Avtomatik zaxira yoqildi: har %s soatda", BACKUP_INTERVAL_HOURS)
+    logger.info("Avtomatik zaxira scheduleri ishga tushdi")
+
+    # Avvalgi yuborilgan vaqtni saqlab turish uchun (bot ishga tushganda birinchi interval o'tgach zaxira olinadi)
+    last_backup_time = asyncio.get_event_loop().time()
 
     while True:
         try:
-            await asyncio.sleep(interval_seconds)
-            await send_backup(application.bot, ADMIN_ID, title="🤖 Avtomatik zaxira nusxasi")
-            logger.info("✅ Avtomatik zaxira adminga yuborildi")
+            # Sozlamalarni DB dan olish
+            try:
+                enabled_setting = SystemSetting.get(SystemSetting.key == "backup_enabled")
+                interval_setting = SystemSetting.get(SystemSetting.key == "backup_interval")
+                enabled = enabled_setting.value == "1"
+                interval_hours = float(interval_setting.value)
+            except Exception:
+                enabled = True
+                interval_hours = 12.0
+
+            if not enabled or interval_hours <= 0:
+                await asyncio.sleep(30)
+                continue
+
+            current_time = asyncio.get_event_loop().time()
+            elapsed_seconds = current_time - last_backup_time
+            interval_seconds = interval_hours * 3600
+
+            if elapsed_seconds >= interval_seconds:
+                await send_backup(application.bot, ADMIN_ID, title="🤖 Avtomatik zaxira nusxasi")
+                logger.info("✅ Avtomatik zaxira adminga yuborildi")
+                last_backup_time = current_time
+
+            await asyncio.sleep(30)
         except asyncio.CancelledError:
             break
         except Exception:
             logger.exception("Avtomatik zaxira yuborishda xatolik")
+            await asyncio.sleep(30)
 
 
 async def main():

@@ -193,14 +193,28 @@ def _migrate_add_full_name_confirmed():
         pass
 
 
+class SystemSetting(BaseModel):
+    """Tizim sozlamalari jadvali"""
+    key = CharField(unique=True)
+    value = TextField()
+
+    class Meta:
+        table_name = "system_settings"
+
+
 def init_db():
     """Databaseni ishga tushirish"""
     db.connect()
-    db.create_tables([User, Test, TestSubmission, Channel, AdminTestWatch, Question])
+    db.create_tables([User, Test, TestSubmission, Channel, AdminTestWatch, Question, SystemSetting])
     _migrate_unique_submissions()
     _migrate_add_test_source()
     _migrate_questions_unique_index()
     _migrate_add_full_name_confirmed()
+    
+    # Default sozlamalarni o'rnatish
+    SystemSetting.get_or_create(key="backup_enabled", defaults={"value": "1"})
+    SystemSetting.get_or_create(key="backup_interval", defaults={"value": "12"})
+    
     print("✅ Database tayyor!")
 
 

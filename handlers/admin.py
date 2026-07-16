@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from telegram.error import TelegramError
 
-from database import User, Test, TestSubmission, Channel, AdminTestWatch, init_db
+from database import User, Test, TestSubmission, Channel, AdminTestWatch, init_db, SystemSetting
 from config import ADMIN_ID
 from backup import send_backup, restore_backup_file
 from utils import get_question_stats, format_stats, format_stats_simple, format_answer_key
@@ -24,6 +24,7 @@ WAITING_BROADCAST_CONFIRM = 3  # preview + tasdiq
 WAITING_RESULT_CODE = 4        # natija qidirish — test kodini kutish
 WAITING_RESTORE_FILE = 5       # zaxirani tiklash — .db faylni kutish
 WAITING_RESTORE_CONFIRM = 6    # zaxirani tiklash — tasdiqlash
+WAITING_BACKUP_INTERVAL = 7    # zaxira intervalini kutish
 
 
 def is_admin(user_id: int) -> bool:
@@ -66,6 +67,7 @@ def admin_keyboard():
         ],
         [InlineKeyboardButton("💾 Zaxira olish (Backup)", callback_data="admin_backup")],
         [InlineKeyboardButton("📥 Zaxirani tiklash (Restore)", callback_data="admin_restore")],
+        [InlineKeyboardButton("⚙️ Zaxira sozlamalari", callback_data="admin_backup_settings")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -560,6 +562,7 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
 
 
 @admin_only
+@admin_only
 async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Database'ning zaxira nusxasini olib, adminga yuborish (manual tugma)"""
     query = update.callback_query
@@ -569,6 +572,168 @@ async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await send_backup(context.bot, update.effective_user.id)
     except Exception as e:
         await query.message.reply_text(f"❌ Zaxira olishda xatolik: {e}")
+
+
+def backup_settings_keyboard(enabled: bool, interval: str):
+    """Zaxira sozlamalari inline klaviaturasi"""
+    status_text = "🟢 Yoqilgan" if enabled else "🔴 O'chirilgan"
+    keyboard = [
+        [InlineKeyboardButton(f"Holati: {status_text}", callback_data="admin_backup_toggle")],
+        [InlineKeyboardButton(f"Interval: {interval} soat", callback_data="admin_backup_edit_interval")],
+        [InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+@admin_only
+async def admin_backup_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zaxira sozlamalari menyusini ko'rsatish"""
+    query = update.callback_query
+    await query.answer()
+
+    enabled_setting = SystemSetting.get(SystemSetting.key == "backup_enabled")
+    interval_setting = SystemSetting.get(SystemSetting.key == "backup_interval")
+
+    enabled = enabled_setting.value == "1"
+    interval = interval_setting.value
+
+    text = (
+        "⚙️ <b>Avtomatik zaxiralash sozlamalari (Backup)</b>\n\n"
+        f"• <b>Holati:</b> {'Yoqilgan' if enabled else 'O\'chirilgan'}\n"
+        f"• <b>Interval:</b> {interval} soatda bir marta\n\n"
+        "Sozlamalarni o'zgartirish uchun pastdagi tugmalardan foydalaning:"
+    )
+
+    await query.message.edit_text(
+        text, parse_mode="HTML", reply_markup=backup_settings_keyboard(enabled, interval)
+    )
+
+
+@admin_only
+async def admin_backup_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zaxira holatini o'zgartirish (toggle)"""
+    query = update.callback_query
+    await query.answer()
+
+    setting = SystemSetting.get(SystemSetting.key == "backup_enabled")
+    new_value = "0" if setting.value == "1" else "1"
+    setting.value = new_value
+    setting.save()
+
+    # Menyuni qayta ko'rsatish
+    await admin_backup_settings_callback(update, context)
+
+
+@admin_only
+async def admin_backup_edit_interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zaxira intervalini tahrirlashni boshlash"""
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.edit_text(
+        "⚙️ <b>Zaxira intervalini o'zgartirish</b>\n\n"
+        "Yangi zaxiralash vaqt oralig'ini <b>soatda</b> kiriting (faqat musbat son, masalan: <code>12</code> yoki <code>0.5</code>):\n\n"
+        "❌ Bekor qilish: /cancel",
+        parse_mode="HTML"
+    )
+
+    context.user_data["backup_settings_prompt_chat_id"] = query.message.chat_id
+    context.user_data["backup_settings_prompt_message_id"] = query.message.message_id
+    return WAITING_BACKUP_INTERVAL
+
+
+async def receive_backup_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kiritilgan interval vaqtini qabul qilish"""
+    text = update.message.text.strip()
+    chat_id = update.message.chat_id
+
+    # Avvalgi so'rov xabarini o'chirish (toza bo'lishi uchun)
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    try:
+        # float ga o'tkazishga urinish
+        val = float(text)
+        if val <= 0:
+            raise ValueError()
+    except ValueError:
+        # Agar noto'g'ri son kiritilgan bo'lsa
+        prompt_msg_id = context.user_data.get("backup_settings_prompt_message_id")
+        if prompt_msg_id:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=prompt_msg_id,
+                    text="❌ <b>Noto'g'ri qiymat kiritildi!</b>\n\n"
+                         "Iltimos, faqat noldan katta musbat son yuboring (masalan: <code>6</code> yoki <code>1.5</code>):\n\n"
+                         "❌ Bekor qilish: /cancel",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+        return WAITING_BACKUP_INTERVAL
+
+    # Sozlamani DB ga yozish (agar juda kichik bo'lsa 2 xonagacha yaxlitlash)
+    val = round(val, 2)
+    setting = SystemSetting.get(SystemSetting.key == "backup_interval")
+    setting.value = str(val)
+    setting.save()
+
+    # Prompt message id o'rniga settings menyusini ko'rsatish
+    prompt_msg_id = context.user_data.pop("backup_settings_prompt_message_id", None)
+    context.user_data.pop("backup_settings_prompt_chat_id", None)
+
+    enabled_setting = SystemSetting.get(SystemSetting.key == "backup_enabled")
+    enabled = enabled_setting.value == "1"
+
+    success_text = (
+        f"✅ <b>Zaxiralash intervali {val} soatga o'zgartirildi!</b>\n\n"
+        "⚙️ <b>Avtomatik zaxiralash sozlamalari (Backup)</b>\n\n"
+        f"• <b>Holati:</b> {'Yoqilgan' if enabled else 'O\'chirilgan'}\n"
+        f"• <b>Interval:</b> {val} soatda bir marta\n\n"
+        "Sozlamalarni o'zgartirish uchun pastdagi tugmalardan foydalaning:"
+    )
+
+    if prompt_msg_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=prompt_msg_id,
+                text=success_text,
+                parse_mode="HTML",
+                reply_markup=backup_settings_keyboard(enabled, str(val))
+            )
+        except Exception:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=success_text,
+                parse_mode="HTML",
+                reply_markup=backup_settings_keyboard(enabled, str(val))
+            )
+    else:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=success_text,
+            parse_mode="HTML",
+            reply_markup=backup_settings_keyboard(enabled, str(val))
+        )
+
+    return ConversationHandler.END
+
+
+async def cancel_backup_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Interval kiritishni bekor qilish"""
+    chat_id = context.user_data.pop("backup_settings_prompt_chat_id", None)
+    msg_id = context.user_data.pop("backup_settings_prompt_message_id", None)
+
+    if chat_id and msg_id:
+        await _edit_message_to_panel(context, chat_id, msg_id)
+    else:
+        await update.message.reply_html(_admin_panel_text(), reply_markup=admin_keyboard())
+
+    return ConversationHandler.END
 
 
 # ============ BACKUP RESTORE (zaxirani tiklash) ============
@@ -1395,6 +1560,20 @@ def get_handlers():
         allow_reentry=True,
     )
 
+    # Zaxiralash sozlamalari (backup settings) conversation
+    backup_settings_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(admin_backup_edit_interval_callback, pattern=r"^admin_backup_edit_interval$")
+        ],
+        states={
+            WAITING_BACKUP_INTERVAL: [
+                MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, receive_backup_interval)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_backup_settings, filters=filters.ChatType.PRIVATE)],
+        allow_reentry=True,
+    )
+
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
         # Bosh menyudagi "👑 Admin panel" tugmasi — /admin bilan bir xil panelni ochadi
@@ -1408,8 +1587,11 @@ def get_handlers():
         broadcast_conv,
         search_result_conv,
         restore_conv,
+        backup_settings_conv,
         CallbackQueryHandler(admin_back_callback, pattern=r"^admin_back$"),
         CallbackQueryHandler(admin_backup_callback, pattern=r"^admin_backup$"),
+        CallbackQueryHandler(admin_backup_settings_callback, pattern=r"^admin_backup_settings$"),
+        CallbackQueryHandler(admin_backup_toggle_callback, pattern=r"^admin_backup_toggle$"),
         CallbackQueryHandler(channels_callback, pattern=r"^admin_channels$"),
         CallbackQueryHandler(list_channels_callback, pattern=r"^list_channels$"),
         CallbackQueryHandler(delete_channel_callback, pattern=r"^del_channel_"),
