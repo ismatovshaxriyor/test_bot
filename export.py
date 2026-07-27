@@ -361,7 +361,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
     # Jadval sarlavhalari
     if rasch_mode:
-        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball", "±SE", "Daraja", "Fit"]
+        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball", "Daraja"]
     else:
         header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball"]
     rows = [header_row]
@@ -376,25 +376,20 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         )
         row = [str(i), name, str(sub['correct']), str(sub['total']), f"{ball}"]
         if rasch_mode:
-            se = sub.get('se')
             grade = get_grade(ball)
-            row.append(f"{se}" if se is not None else "-")
             row.append(grade)
-            row.append("⚠️" if sub.get('misfit') else "✅")
         rows.append(row)
 
     # Ustun kengliklari (A4 = 595pt, chapdan 35+35 = 70pt margin)
     avail_width = A4[0] - 70
     if rasch_mode:
         col_widths = [
-            avail_width * 0.05,   # #
-            avail_width * 0.33,   # Ism
-            avail_width * 0.10,   # To'g'ri
-            avail_width * 0.08,   # Jami
-            avail_width * 0.12,   # Ball
-            avail_width * 0.11,   # SE
+            avail_width * 0.06,   # #
+            avail_width * 0.44,   # Ism
+            avail_width * 0.13,   # To'g'ri
+            avail_width * 0.11,   # Jami
+            avail_width * 0.14,   # Ball
             avail_width * 0.12,   # Daraja
-            avail_width * 0.09,   # Fit
         ]
     else:
         col_widths = [

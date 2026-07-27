@@ -490,118 +490,185 @@ def _sigmoid(x: float) -> float:
     return z / (1.0 + z)
 
 
-def _fit_rasch_jmle(
-    response_matrix: List[List[int]],
-    max_iter: int = 250,
-    tol: float = 1e-4,
-) -> tuple[List[float], List[float], bool]:
+def _leave_one_out_esf(eps: List[float], j: int) -> List[float]:
     """
-    Dichotomous Rasch (1PL) uchun JMLE.
+    gamma^(-j)_0..gamma^(-j)_{L-1} — item'lar orasidan j-item chiqarib
+    tashlangan elementar simmetrik funksiyalar (ESF; Rash CMLE'ning asosi).
+
+    gamma^(-j)_r = qolgan L-1 ta item'dan r tasini tanlab olingan barcha kichik
+    to'plamlar bo'yicha epsilon_k (item "osonlik"i, exp(-beta_k)) ko'paytmalari
+    yig'indisi. To'liq ESF'dan orqaga qarab ayirib chiqarish (backward
+    elimination) katta qiymatlarda raqamli beqarorlikka (catastrophic
+    cancellation) olib keladi — shu sababli L-1 ta qolgan item ustida forward
+    rekursiya to'g'ridan-to'g'ri qayta ishga tushiriladi. Faqat
+    qo'shish/ko'paytirishdan iborat (ayirish yo'q), shu bois har doim barqaror.
+    """
+    gamma = [1.0]
+    for k, e in enumerate(eps):
+        if k == j:
+            continue
+        new_gamma = [0.0] * (len(gamma) + 1)
+        for r in range(len(new_gamma)):
+            left = gamma[r] if r < len(gamma) else 0.0
+            diag = gamma[r - 1] if 0 <= r - 1 < len(gamma) else 0.0
+            new_gamma[r] = left + e * diag
+        gamma = new_gamma
+    return gamma
+
+
+def _fit_rasch_cmle(
+    response_matrix: List[List[int]],
+    max_iter: int = 200,
+    tol: float = 1e-5,
+) -> tuple[List[float], bool]:
+    """
+    Dichotomous Rash (1PL) item qiyinliklarini Conditional Maximum Likelihood
+    (CMLE) bilan baholaydi — bu "aynan Rash usuli" deb ataladigan, shaxs
+    qobiliyat parametrlarini modeldan butunlay chiqarib tashlab (raw ball —
+    yetarli statistika — ustidan shartlanib) item qiyinligini hisoblaydigan
+    yagona usul. Natijada item baholari kalibrlash namunasidagi kishilarning
+    qobiliyat taqsimotidan mustaqil bo'ladi ("specific objectivity") va JMLE'ga
+    xos tizimli siljish (bias) butunlay yo'qoladi — taxminiy tuzatish shart emas.
 
     Returns:
-        (person_thetas, item_difficulties, converged)
+        (item_difficulties, converged)
     """
     num_persons = len(response_matrix)
     num_items = len(response_matrix[0]) if num_persons else 0
-    if num_persons == 0 or num_items == 0:
-        return [], [], False
+    if num_persons == 0 or num_items < 2:
+        return [], False
 
-    # Boshlang'ich nuqta: 0/100 holatlarda cheksizlikdan qochish uchun 0.5 correction
-    thetas: List[float] = []
-    for row in response_matrix:
-        raw = sum(row)
-        p = (raw + 0.5) / (num_items + 1.0)
-        thetas.append(math.log(p / (1.0 - p)))
+    raw_scores = [sum(row) for row in response_matrix]
+    n_r = [0] * (num_items + 1)
+    for r in raw_scores:
+        n_r[r] += 1
 
+    s_j = [sum(response_matrix[i][j] for i in range(num_persons)) for j in range(num_items)]
+
+    # Boshlang'ich qiymatlar — oddiy log-odds (iteratsiya tezroq yaqinlashishi uchun)
     betas: List[float] = []
     for j in range(num_items):
-        raw = sum(response_matrix[i][j] for i in range(num_persons))
-        p = (raw + 0.5) / (num_persons + 1.0)
+        p = (s_j[j] + 0.5) / (num_persons + 1.0)
         betas.append(-math.log(p / (1.0 - p)))
+    center = sum(betas) / num_items
+    betas = [b - center for b in betas]
 
     converged = False
 
+    # Ketma-ket (Gauss-Seidel uslubidagi) Newton-Raphson yangilanish: har item
+    # o'zgargandan so'ng darhol ESF qayta hisoblanadi. Oddiy fixed-point
+    # almashtirish (eps_j = s_j/denom) juda sekin yaqinlashishi (yuzlab
+    # iteratsiya, katta testlarda hatto yetarli bo'lmasligi) aniqlandi — shu
+    # sababli aniq ikkinchi hosila (Fisher axboroti) bilan Newton qadami
+    # ishlatiladi, bu bir necha barobar tezroq yaqinlashadi.
     for _ in range(max_iter):
         max_change = 0.0
 
-        # Person ability (theta) update
-        for i in range(num_persons):
-            theta = thetas[i]
-            score = 0.0
-            info = 0.0
-            for j in range(num_items):
-                p = _sigmoid(theta - betas[j])
-                x = response_matrix[i][j]
-                score += (x - p)
-                info += p * (1.0 - p)
-
-            if info < 1e-9:
-                continue
-
-            delta = max(min(score / info, 1.0), -1.0)
-            updated = max(min(theta + delta, 6.0), -6.0)
-            max_change = max(max_change, abs(updated - theta))
-            thetas[i] = updated
-
-        # Item difficulty (beta) update
         for j in range(num_items):
-            beta = betas[j]
-            score = 0.0
-            info = 0.0
-            for i in range(num_persons):
-                p = _sigmoid(thetas[i] - beta)
-                x = response_matrix[i][j]
-                score += (x - p)
-                info += p * (1.0 - p)
-
-            if info < 1e-9:
+            # Hamma yoki hech kim yechmagan item — CMLE bu holatda aniqlanmaydi
+            # (nol variatsiya = ma'lumot yo'q), eski qiymat saqlanadi.
+            if s_j[j] <= 0 or s_j[j] >= num_persons:
                 continue
 
-            # beta uchun yo'nalish teskari: dL/dbeta = -(x - p)
-            delta = max(min(score / info, 1.0), -1.0)
-            updated = max(min(beta - delta, 6.0), -6.0)
-            max_change = max(max_change, abs(updated - beta))
-            betas[j] = updated
+            eps = [math.exp(-b) for b in betas]
+            gamma_loo = _leave_one_out_esf(eps, j)
+            e_j = eps[j]
+            # gamma_full ni gamma_loo'dan qo'shish orqali (ayirishsiz, barqaror) chiqarish
+            gamma_full = [0.0] * (len(gamma_loo) + 1)
+            for r in range(len(gamma_full)):
+                left = gamma_loo[r] if r < len(gamma_loo) else 0.0
+                diag = gamma_loo[r - 1] if 0 <= r - 1 < len(gamma_loo) else 0.0
+                gamma_full[r] = left + e_j * diag
 
-        # Identifiability: item qiyinliklar o'rtachasi 0 bo'lsin.
-        # Farq (theta - beta) saqlanishi uchun ikkalasidan ham bir xil qiymat ayriladi.
+            # pi_rj = P(x_j=1 | raw ball=r) — item j ning kutilgan (model) ulushi
+            expected = 0.0
+            info = 0.0
+            for r in range(1, num_items + 1):
+                if n_r[r] == 0:
+                    continue
+                pi_rj = e_j * gamma_loo[r - 1] / gamma_full[r]
+                expected += n_r[r] * pi_rj
+                info += n_r[r] * pi_rj * (1.0 - pi_rj)
+
+            if info <= 1e-9:
+                continue
+
+            delta = max(min((expected - s_j[j]) / info, 2.0), -2.0)
+            new_beta_j = max(min(betas[j] + delta, 8.0), -8.0)
+            max_change = max(max_change, abs(new_beta_j - betas[j]))
+            betas[j] = new_beta_j
+
+        # Identifiability: item qiyinliklar o'rtachasi 0 bo'lsin
         center = sum(betas) / num_items
-        if abs(center) > 1e-12:
-            # Centering'dan keyin ham ±6 chegarada qolsin (raw logit ko'rsatkichi oshib ketmasin)
-            betas = [max(min(b - center, 6.0), -6.0) for b in betas]
-            thetas = [max(min(t - center, 6.0), -6.0) for t in thetas]
+        betas = [b - center for b in betas]
 
         if max_change < tol:
             converged = True
             break
 
-    return thetas, betas, converged
+    return betas, converged
 
 
-def _apply_jmle_bias_correction(
-    thetas: List[float], betas: List[float]
-) -> tuple[List[float], List[float]]:
+def _estimate_person_wle(
+    response_matrix: List[List[int]],
+    betas: List[float],
+    max_iter: int = 100,
+    tol: float = 1e-5,
+) -> List[float]:
     """
-    JMLE (Joint MLE) baholari haqiqiy qiymatlarga nisbatan tarqoqroq (over-dispersed)
-    chiqishi tanilgan xato — Wright & Panchapakesan (1969). Item qiyinliklari (L ta
-    savol) va person qobiliyatlari (N ta ishtirokchi) uchun standart tuzatish:
-    markazga nisbatan (L-1)/L va (N-1)/N koeffitsiyentda siqish (shrinkage).
-    Tartib (ranking) o'zgarmaydi — faqat masshtab to'g'irlanadi.
+    Item qiyinliklari (CMLE bilan aniqlangan) asosida har bir ishtirokchining
+    qobiliyatini Warm (1989) Weighted Likelihood Estimation (WLE) bilan hisoblaydi.
+
+    Oddiy MLE qisqa testlarda tizimli siljishga ega (va 0/100% natijalarda
+    cheksizlikka intiladi); WLE bu siljishni Fisher axboroti orqali aniq
+    formula bilan tuzatadi va hatto eng past/eng yuqori xom balda ham chekli
+    (finite) baho beradi — qo'lda ±chegara qo'yish shart emas.
+
+    Score tenglamasi: U(theta) + I'(theta) / (2*I(theta)) = 0
+        U(theta)  = sum(x_j - P_j)                    — odatiy MLE score
+        I(theta)  = sum(P_j*Q_j)                       — test axboroti
+        I'(theta) = sum(P_j*Q_j*(1-2*P_j))              — I ning hosilasi
+        I''(theta)= sum(P_j*Q_j*(1-6*P_j*Q_j))          — Newton qadami uchun
     """
     num_items = len(betas)
-    num_persons = len(thetas)
+    thetas = []
 
-    if num_items > 1:
-        item_factor = (num_items - 1) / num_items
-        beta_center = sum(betas) / num_items
-        betas = [beta_center + (b - beta_center) * item_factor for b in betas]
+    for row in response_matrix:
+        raw = sum(row)
+        p0 = (raw + 0.5) / (num_items + 1.0)
+        theta = math.log(p0 / (1.0 - p0))
 
-    if num_persons > 1:
-        person_factor = (num_persons - 1) / num_persons
-        theta_center = sum(thetas) / num_persons
-        thetas = [theta_center + (t - theta_center) * person_factor for t in thetas]
+        for _ in range(max_iter):
+            score = 0.0
+            info = 0.0
+            info_deriv = 0.0
+            info_deriv2 = 0.0
+            for j in range(num_items):
+                p = _sigmoid(theta - betas[j])
+                w = p * (1.0 - p)
+                score += (row[j] - p)
+                info += w
+                info_deriv += w * (1.0 - 2.0 * p)
+                info_deriv2 += w * (1.0 - 6.0 * w)
 
-    return thetas, betas
+            if info < 1e-9:
+                break
+
+            g = score + info_deriv / (2.0 * info)
+            g_prime = -info + (info_deriv2 * info - info_deriv ** 2) / (2.0 * info * info)
+            if abs(g_prime) < 1e-9:
+                break
+
+            delta = max(min(g / g_prime, 1.0), -1.0)
+            new_theta = max(min(theta - delta, 8.0), -8.0)
+            change = abs(new_theta - theta)
+            theta = new_theta
+            if change < tol:
+                break
+
+        thetas.append(theta)
+
+    return thetas
 
 
 def _rasch_fit_stats(
@@ -779,13 +846,15 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     if total_questions == 0:
         return empty_result
 
-    person_thetas, item_difficulties, converged = _fit_rasch_jmle(response_matrix)
-    if not person_thetas or not item_difficulties:
+    item_difficulties, converged = _fit_rasch_cmle(response_matrix)
+    if not item_difficulties:
         return empty_result
 
-    # JMLE baholari tabiiy ravishda haqiqiy qiymatdan ko'ra tarqoqroq chiqadi —
-    # standart (L-1)/L, (N-1)/N tuzatishi bilan masshtabni to'g'irlaymiz.
-    person_thetas, item_difficulties = _apply_jmle_bias_correction(person_thetas, item_difficulties)
+    # Item qiyinliklari CMLE bilan (xolisona) aniqlangach, har bir ishtirokchining
+    # qobiliyati shu qiyinliklarga nisbatan WLE bilan hisoblanadi.
+    person_thetas = _estimate_person_wle(response_matrix, item_difficulties)
+    if not person_thetas:
+        return empty_result
 
     fit = _rasch_fit_stats(response_matrix, person_thetas, item_difficulties)
 
