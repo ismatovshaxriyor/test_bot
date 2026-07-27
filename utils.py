@@ -577,6 +577,151 @@ def _fit_rasch_jmle(
 
     return thetas, betas, converged
 
+
+def _apply_jmle_bias_correction(
+    thetas: List[float], betas: List[float]
+) -> tuple[List[float], List[float]]:
+    """
+    JMLE (Joint MLE) baholari haqiqiy qiymatlarga nisbatan tarqoqroq (over-dispersed)
+    chiqishi tanilgan xato — Wright & Panchapakesan (1969). Item qiyinliklari (L ta
+    savol) va person qobiliyatlari (N ta ishtirokchi) uchun standart tuzatish:
+    markazga nisbatan (L-1)/L va (N-1)/N koeffitsiyentda siqish (shrinkage).
+    Tartib (ranking) o'zgarmaydi — faqat masshtab to'g'irlanadi.
+    """
+    num_items = len(betas)
+    num_persons = len(thetas)
+
+    if num_items > 1:
+        item_factor = (num_items - 1) / num_items
+        beta_center = sum(betas) / num_items
+        betas = [beta_center + (b - beta_center) * item_factor for b in betas]
+
+    if num_persons > 1:
+        person_factor = (num_persons - 1) / num_persons
+        theta_center = sum(thetas) / num_persons
+        thetas = [theta_center + (t - theta_center) * person_factor for t in thetas]
+
+    return thetas, betas
+
+
+def _rasch_fit_stats(
+    response_matrix: List[List[int]],
+    thetas: List[float],
+    betas: List[float],
+) -> Dict:
+    """
+    Har bir person va item uchun standart xato (SE) va infit/outfit
+    (mean-square residual) statistikasini hisoblaydi.
+
+    - SE = 1 / sqrt(Fisher info yig'indisi) — baholash qanchalik aniqligini bildiradi.
+    - Outfit — kutilmagan (tasodifiy) javoblarga sezgir, og'irliksiz o'rtacha.
+    - Infit — markazga yaqin javoblarga ko'proq og'irlik beradigan, info-weighted o'rtacha.
+    Ikkalasi ham modelga mos kelsa ~1.0 atrofida bo'ladi. Faqat mutlaq
+    0.5–1.5 oralig'idan chetga chiqish yetarli emas — kichik guruhlarda (N kam)
+    MNSQ tabiiy ravishda juda "sakraydi" va bu yolg'on signal beradi. Shu sababli
+    "misfit" deb baholash uchun statistik ahamiyatlilik ham talab qilinadi:
+    kutilgan MNSQ atrofidagi tebranish (q — Wright & Masters, 1982 formulasi
+    bo'yicha taxminiy standart xato) 2 barobaridan katta chetlanish bo'lishi kerak.
+    """
+    num_persons = len(response_matrix)
+    num_items = len(betas)
+
+    person_info = [0.0] * num_persons
+    person_resid_sq = [0.0] * num_persons
+    person_outfit_sum = [0.0] * num_persons
+    person_outfit_var = [0.0] * num_persons
+    person_infit_var = [0.0] * num_persons
+    item_info = [0.0] * num_items
+    item_resid_sq = [0.0] * num_items
+    item_outfit_sum = [0.0] * num_items
+    item_outfit_var = [0.0] * num_items
+    item_infit_var = [0.0] * num_items
+
+    for i in range(num_persons):
+        theta = thetas[i]
+        row = response_matrix[i]
+        for j in range(num_items):
+            p = _sigmoid(theta - betas[j])
+            w = max(p * (1.0 - p), 1e-6)
+            resid_sq = (row[j] - p) ** 2
+            z_sq_over_w = resid_sq / w
+            # Bernoulli javobning to'rtinchi markaziy momentidan kelib chiqqan
+            # kurtoz had — z^2 statistikaning o'z varianstini beradi.
+            kurt = max((1.0 - 4.0 * w) / w, 0.0)
+
+            person_info[i] += w
+            person_resid_sq[i] += resid_sq
+            person_outfit_sum[i] += z_sq_over_w
+            person_outfit_var[i] += kurt
+            person_infit_var[i] += (w ** 2) * kurt
+
+            item_info[j] += w
+            item_resid_sq[j] += resid_sq
+            item_outfit_sum[j] += z_sq_over_w
+            item_outfit_var[j] += kurt
+            item_infit_var[j] += (w ** 2) * kurt
+
+    MISFIT_LOW, MISFIT_HIGH = 0.5, 1.5
+    ZSTD_THRESHOLD = 2.0
+
+    def _is_misfit(mnsq, var_sum, info_sum) -> bool:
+        if mnsq is None or not (mnsq < MISFIT_LOW or mnsq > MISFIT_HIGH):
+            return False
+        if info_sum <= 1e-9:
+            return False
+        q = math.sqrt(var_sum) / info_sum
+        if q <= 1e-9:
+            return False
+        return abs(mnsq - 1.0) / q > ZSTD_THRESHOLD
+
+    person_stats = []
+    for i in range(num_persons):
+        se = round(1.0 / math.sqrt(person_info[i]), 2) if person_info[i] > 1e-9 else None
+        infit = round(person_resid_sq[i] / person_info[i], 2) if person_info[i] > 1e-9 else None
+        outfit = round(person_outfit_sum[i] / num_items, 2) if num_items > 0 else None
+        misfit = bool(
+            _is_misfit(infit, person_infit_var[i], person_info[i])
+            or _is_misfit(outfit, person_outfit_var[i], float(num_items))
+        )
+        person_stats.append({"se": se, "infit": infit, "outfit": outfit, "misfit": misfit})
+
+    item_stats = []
+    for j in range(num_items):
+        se = round(1.0 / math.sqrt(item_info[j]), 2) if item_info[j] > 1e-9 else None
+        infit = round(item_resid_sq[j] / item_info[j], 2) if item_info[j] > 1e-9 else None
+        outfit = round(item_outfit_sum[j] / num_persons, 2) if num_persons > 0 else None
+        misfit = bool(
+            _is_misfit(infit, item_infit_var[j], item_info[j])
+            or _is_misfit(outfit, item_outfit_var[j], float(num_persons))
+        )
+        item_stats.append({"se": se, "infit": infit, "outfit": outfit, "misfit": misfit})
+
+    return {"person_stats": person_stats, "item_stats": item_stats}
+
+
+def _separation_reliability(estimates: List[float], ses: List[Optional[float]]) -> Optional[float]:
+    """
+    Person/item separation reliability: taxminlar orasidagi haqiqiy farq qanchalik
+    o'lchash xatosidan katta ekanini bildiradi (0..1, klassik test nazariyasidagi
+    Cronbach-alpha'ga o'xshash rol o'ynaydi, lekin SE'ga asoslangan).
+
+    reliability = (kuzatilgan variansiya - o'rtacha xato variansiyasi) / kuzatilgan variansiya
+    """
+    valid_ses = [se for se in ses if se is not None]
+    n = len(estimates)
+    if n < 2 or len(valid_ses) != n:
+        return None
+
+    mean = sum(estimates) / n
+    observed_var = sum((e - mean) ** 2 for e in estimates) / (n - 1)
+    if observed_var <= 1e-9:
+        return 0.0
+
+    mean_error_var = sum(se ** 2 for se in valid_ses) / n
+    true_var = max(observed_var - mean_error_var, 0.0)
+    return round(true_var / observed_var, 3)
+
+
 def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     """
     Rash modeli bo'yicha ball hisoblash
@@ -594,8 +739,21 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             'rasch_available': bool
         }
     """
+    empty_result = {
+        'rasch_available': False,
+        'question_difficulties': [],
+        'question_weights': [],
+        'question_infit': [],
+        'question_outfit': [],
+        'question_se': [],
+        'question_misfit': [],
+        'person_reliability': None,
+        'item_reliability': None,
+        'user_scores': [],
+    }
+
     if len(submissions) < 3:
-        return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
+        return empty_result
 
     correct_answers = _extract_correct_answers(test.correct_answers)
     question_types = _extract_question_types(test.correct_answers)
@@ -603,7 +761,7 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     is_mixed = _is_mixed_answers(test.correct_answers)
 
     if raw_total == 0:
-        return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
+        return empty_result
 
     # Javoblar matritsasini tuzish (1 = to'g'ri, 0 = noto'g'ri)
     # Open2 savollar a/b ga ajratiladi — har biri alohida item
@@ -619,15 +777,32 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
 
     total_questions = len(response_matrix[0]) if response_matrix else 0
     if total_questions == 0:
-        return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
+        return empty_result
 
     person_thetas, item_difficulties, converged = _fit_rasch_jmle(response_matrix)
     if not person_thetas or not item_difficulties:
-        return {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
+        return empty_result
+
+    # JMLE baholari tabiiy ravishda haqiqiy qiymatdan ko'ra tarqoqroq chiqadi —
+    # standart (L-1)/L, (N-1)/N tuzatishi bilan masshtabni to'g'irlaymiz.
+    person_thetas, item_difficulties = _apply_jmle_bias_correction(person_thetas, item_difficulties)
+
+    fit = _rasch_fit_stats(response_matrix, person_thetas, item_difficulties)
 
     question_difficulties = [round(beta, 2) for beta in item_difficulties]
     # Katta qiymat = qiyinroq savol
     question_weights = [round(_sigmoid(beta), 2) for beta in item_difficulties]
+    question_infit = [row['infit'] for row in fit['item_stats']]
+    question_outfit = [row['outfit'] for row in fit['item_stats']]
+    question_se = [row['se'] for row in fit['item_stats']]
+    question_misfit = [row['misfit'] for row in fit['item_stats']]
+
+    person_reliability = _separation_reliability(
+        person_thetas, [row['se'] for row in fit['person_stats']]
+    )
+    item_reliability = _separation_reliability(
+        item_difficulties, [row['se'] for row in fit['item_stats']]
+    )
 
     user_scores = []
 
@@ -635,6 +810,7 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         correct_count = sum(response_matrix[s])
         percentage = round((correct_count / total_questions) * 100, 1) if total_questions > 0 else 0
         theta = person_thetas[s]
+        p_fit = fit['person_stats'][s]
 
         # Testdagi item qiyinliklarini hisobga olgan holda kutilgan ball (0..100)
         expected_pct = (
@@ -650,7 +826,11 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             'total': total_questions,
             'percentage': percentage,
             'rasch_score': round(theta, 2),
-            'rasch_normalized': rasch_normalized
+            'rasch_normalized': rasch_normalized,
+            'se': p_fit['se'],
+            'infit': p_fit['infit'],
+            'outfit': p_fit['outfit'],
+            'misfit': p_fit['misfit'],
         })
 
     # Asosiy tartib: ability logit (rasch_score), keyin raw natija
@@ -660,6 +840,12 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         'rasch_available': True,
         'question_difficulties': question_difficulties,
         'question_weights': question_weights,
+        'question_infit': question_infit,
+        'question_outfit': question_outfit,
+        'question_se': question_se,
+        'question_misfit': question_misfit,
+        'person_reliability': person_reliability,
+        'item_reliability': item_reliability,
         'rasch_converged': converged,
         'user_scores': user_scores
     }
@@ -736,29 +922,47 @@ def get_question_stats(test: Test) -> Dict:
 
     total_subs = len(submissions)
 
-    # Savol statistikasi
-    question_stats = []
-    for i, correct in enumerate(question_correct):
-        percentage = round((correct / total_subs) * 100, 1) if total_subs > 0 else 0
-        question_stats.append({
-            'index': exp_labels[i],
-            'correct_count': correct,
-            'percentage': percentage
-        })
-
-    # Eng oson va eng qiyin savollar
-    easiest_idx = max(range(total_questions), key=lambda i: question_correct[i])
-    hardest_idx = min(range(total_questions), key=lambda i: question_correct[i])
-    easiest = exp_labels[easiest_idx]
-    hardest = exp_labels[hardest_idx]
-
     # Rash modeli — faqat test Rash rejimida bo'lsa hisoblanadi.
     # Oddiy testda ishtirokchilar Rash bali bo'yicha emas, to'g'ri javoblar
     # soni bo'yicha tartiblanishi kerak (export/statistika shu ro'yxatni oladi).
     if test.scoring_mode == "rasch":
         rasch = calculate_rasch_scores(test, submissions)
     else:
-        rasch = {'rasch_available': False, 'question_difficulties': [], 'question_weights': [], 'user_scores': []}
+        rasch = {
+            'rasch_available': False, 'question_difficulties': [], 'question_weights': [],
+            'question_infit': [], 'question_outfit': [], 'question_se': [], 'question_misfit': [],
+            'person_reliability': None, 'item_reliability': None, 'user_scores': [],
+        }
+
+    # Savol statistikasi — Rash mavjud bo'lsa, unga tegishli fit/qiyinlik ma'lumoti qo'shiladi
+    question_stats = []
+    for i, correct in enumerate(question_correct):
+        percentage = round((correct / total_subs) * 100, 1) if total_subs > 0 else 0
+        entry = {
+            'index': exp_labels[i],
+            'correct_count': correct,
+            'percentage': percentage
+        }
+        if rasch['rasch_available'] and i < len(rasch['question_difficulties']):
+            entry['difficulty'] = rasch['question_difficulties'][i]
+            entry['infit'] = rasch['question_infit'][i]
+            entry['outfit'] = rasch['question_outfit'][i]
+            entry['misfit'] = rasch['question_misfit'][i]
+        question_stats.append(entry)
+
+    # Eng oson va eng qiyin savollar.
+    # Rash mavjud bo'lsa — item qiyinligi (beta) bo'yicha aniqlanadi, chunki bu
+    # xom % to'g'ri javobdan farqli o'laroq ishtirokchilar qobiliyatidan mustaqil
+    # o'lchov beradi (masalan, kuchli guruh yechgan qiyin savol % da past ko'rinmasligi mumkin).
+    if rasch['rasch_available'] and rasch['question_difficulties']:
+        difficulties = rasch['question_difficulties']
+        easiest_idx = min(range(total_questions), key=lambda i: difficulties[i])
+        hardest_idx = max(range(total_questions), key=lambda i: difficulties[i])
+    else:
+        easiest_idx = max(range(total_questions), key=lambda i: question_correct[i])
+        hardest_idx = min(range(total_questions), key=lambda i: question_correct[i])
+    easiest = exp_labels[easiest_idx]
+    hardest = exp_labels[hardest_idx]
 
     # Foydalanuvchilar ro'yxati
     if rasch['rasch_available']:
@@ -829,6 +1033,28 @@ def format_stats(stats: Dict, test: Test) -> str:
     else:
         text += f"📊 Baholash: <b>Oddiy</b>\n"
     text += "\n"
+
+    rasch = stats.get('rasch', {})
+    if rasch.get('rasch_available'):
+        person_rel = rasch.get('person_reliability')
+        item_rel = rasch.get('item_reliability')
+        if person_rel is not None:
+            text += f"📈 Ishtirokchilarni ajratish ishonchliligi: {person_rel:.2f}\n"
+        if item_rel is not None:
+            text += f"📈 Savollarni ajratish ishonchliligi: {item_rel:.2f}\n"
+        if not rasch.get('rasch_converged', True):
+            text += "⚠️ Hisoblash to'liq yaqinlashmadi — natijalar taxminiy bo'lishi mumkin.\n"
+
+        misfit_persons = sum(1 for row in rasch.get('user_scores', []) if row.get('misfit'))
+        misfit_items = sum(1 for qs in stats.get('question_stats', []) if qs.get('misfit'))
+        if misfit_persons:
+            text += (
+                f"⚠️ {misfit_persons} ta ishtirokchining javob namunasi Rash modeliga "
+                f"mos kelmadi (g'ayrioddiy taxmin yoki nomutanosib xatolar).\n"
+            )
+        if misfit_items:
+            text += f"⚠️ {misfit_items} ta savol Rash modeliga yaxshi mos kelmadi — savol matnini tekshirib ko'ring.\n"
+        text += "\n"
 
     # Eng oson va qiyin savollar
     if stats['easiest']:

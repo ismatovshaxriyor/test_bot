@@ -68,7 +68,7 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
     if not submissions:
         return
 
-    rasch_scores_by_user: dict[int, float] = {}
+    rasch_scores_by_user: dict[int, dict] = {}
     if test.scoring_mode == "rasch":
         rasch_data = calculate_rasch_scores(test, submissions)
         for row in rasch_data.get("user_scores", []):
@@ -76,7 +76,11 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
             if user_id is None:
                 continue
             try:
-                rasch_scores_by_user[int(user_id)] = float(row.get("rasch_normalized", 0))
+                rasch_scores_by_user[int(user_id)] = {
+                    "score": float(row.get("rasch_normalized", 0)),
+                    "se": row.get("se"),
+                    "misfit": row.get("misfit", False),
+                }
             except (TypeError, ValueError):
                 continue
 
@@ -84,13 +88,19 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
         user_id = submission.user.telegram_id
 
         if test.scoring_mode == "rasch":
-            score = rasch_scores_by_user.get(user_id, float(submission.percentage))
-            rounded_score = round(score, 1)
+            row = rasch_scores_by_user.get(user_id)
+            rounded_score = round(row["score"], 1) if row else round(float(submission.percentage), 1)
             grade = get_grade(rounded_score)
+            se_part = f" ± {row['se']}" if row and row.get("se") is not None else ""
             result_line = (
-                f"📐 <b>Natijangiz:</b> {rounded_score} ball\n"
+                f"📐 <b>Natijangiz:</b> {rounded_score}{se_part} ball\n"
                 f"🏅 <b>Daraja:</b> {grade}"
             )
+            if row and row.get("misfit"):
+                result_line += (
+                    "\n⚠️ <i>Javoblaringiz namunasi Rash modeliga to'liq mos kelmadi "
+                    "(g'ayrioddiy taxmin yoki xatolar) — natija taxminiyroq bo'lishi mumkin.</i>"
+                )
         else:
             result_line = (
                 f"✅ <b>Natijangiz:</b> "

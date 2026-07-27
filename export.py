@@ -67,7 +67,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
     # Sarlavha
     rasch_mode = test.scoring_mode == "rasch"
-    ws.merge_cells('A1:F1' if rasch_mode else 'A1:E1')
+    ws.merge_cells('A1:H1' if rasch_mode else 'A1:E1')
     ws['A1'] = f"📊 Test natijasi — {test.id}"
     ws['A1'].font = title_font
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -88,7 +88,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     row = 8
 
     if rasch_mode:
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Ball", "Daraja"]
+        headers = ["#", "Ism", "To'g'ri", "Jami", "Ball", "SE", "Daraja", "Fit"]
     else:
         headers = ["#", "Ism", "To'g'ri", "Jami", "Ball"]
 
@@ -115,8 +115,11 @@ def export_to_excel(stats: Dict, test: Test) -> str:
         ws.cell(row=r, column=4, value=sub['total']).border = thin_border
         ws.cell(row=r, column=5, value=ball).border = thin_border
         if rasch_mode:
+            se = sub.get('se')
+            ws.cell(row=r, column=6, value=se if se is not None else "-").border = thin_border
             grade = get_grade(ball)
-            ws.cell(row=r, column=6, value=grade).border = thin_border
+            ws.cell(row=r, column=7, value=grade).border = thin_border
+            ws.cell(row=r, column=8, value="⚠️" if sub.get('misfit') else "✅").border = thin_border
             fill = grade_fills.get(grade)
             if fill:
                 for c in range(1, len(headers) + 1):
@@ -138,7 +141,9 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     ws.column_dimensions['D'].width = 8
     ws.column_dimensions['E'].width = 10
     if rasch_mode:
-        ws.column_dimensions['F'].width = 10
+        ws.column_dimensions['F'].width = 8
+        ws.column_dimensions['G'].width = 10
+        ws.column_dimensions['H'].width = 8
 
     # Savol statistikasi sahifasi
     if stats.get('question_stats'):
@@ -148,16 +153,21 @@ def export_to_excel(stats: Dict, test: Test) -> str:
         ws2['A1'].font = title_font
         ws2['A1'].alignment = Alignment(horizontal='center')
 
+        rasch_data = stats.get('rasch', {})
+        difficulties = rasch_data.get('question_difficulties', [])
+        infits = rasch_data.get('question_infit', [])
+        outfits = rasch_data.get('question_outfit', [])
+        has_fit = bool(infits) and bool(outfits)
+
         q_headers = ["Savol #", "To'g'ri javoblar", "Foiz (%)", "Qiyinligi"]
+        if has_fit:
+            q_headers += ["Infit", "Outfit", "Mos kelish"]
         for col, header in enumerate(q_headers, 1):
             cell = ws2.cell(row=3, column=col, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal='center')
             cell.border = thin_border
-
-        rasch_data = stats.get('rasch', {})
-        difficulties = rasch_data.get('question_difficulties', [])
 
         for i, qs in enumerate(stats['question_stats']):
             r = 4 + i
@@ -181,13 +191,25 @@ def export_to_excel(stats: Dict, test: Test) -> str:
             else:
                 ws2.cell(row=r, column=4, value="-").border = thin_border
 
-            for c in range(1, 5):
+            if has_fit:
+                infit = infits[i] if i < len(infits) else None
+                outfit = outfits[i] if i < len(outfits) else None
+                ws2.cell(row=r, column=5, value=infit if infit is not None else "-").border = thin_border
+                ws2.cell(row=r, column=6, value=outfit if outfit is not None else "-").border = thin_border
+                misfit = qs.get('misfit', False)
+                ws2.cell(row=r, column=7, value="⚠️" if misfit else "✅").border = thin_border
+
+            for c in range(1, len(q_headers) + 1):
                 ws2.cell(row=r, column=c).alignment = Alignment(horizontal='center')
 
         ws2.column_dimensions['A'].width = 10
         ws2.column_dimensions['B'].width = 18
         ws2.column_dimensions['C'].width = 12
         ws2.column_dimensions['D'].width = 15
+        if has_fit:
+            ws2.column_dimensions['E'].width = 10
+            ws2.column_dimensions['F'].width = 10
+            ws2.column_dimensions['G'].width = 12
 
     # Faylni saqlash
     filepath = os.path.join(tempfile.gettempdir(), f"test_{test.id}.xlsx")
@@ -339,7 +361,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
     # Jadval sarlavhalari
     if rasch_mode:
-        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball", "Daraja"]
+        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball", "±SE", "Daraja", "Fit"]
     else:
         header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball"]
     rows = [header_row]
@@ -354,20 +376,25 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         )
         row = [str(i), name, str(sub['correct']), str(sub['total']), f"{ball}"]
         if rasch_mode:
+            se = sub.get('se')
             grade = get_grade(ball)
+            row.append(f"{se}" if se is not None else "-")
             row.append(grade)
+            row.append("⚠️" if sub.get('misfit') else "✅")
         rows.append(row)
 
     # Ustun kengliklari (A4 = 595pt, chapdan 35+35 = 70pt margin)
     avail_width = A4[0] - 70
     if rasch_mode:
         col_widths = [
-            avail_width * 0.06,   # #
-            avail_width * 0.44,   # Ism
-            avail_width * 0.12,   # To'g'ri
-            avail_width * 0.10,   # Jami
-            avail_width * 0.14,   # Ball
-            avail_width * 0.14,   # Daraja
+            avail_width * 0.05,   # #
+            avail_width * 0.33,   # Ism
+            avail_width * 0.10,   # To'g'ri
+            avail_width * 0.08,   # Jami
+            avail_width * 0.12,   # Ball
+            avail_width * 0.11,   # SE
+            avail_width * 0.12,   # Daraja
+            avail_width * 0.09,   # Fit
         ]
     else:
         col_widths = [
