@@ -889,7 +889,6 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
 
     for s, sub in enumerate(submissions):
         correct_count = sum(response_matrix[s])
-        percentage = round((correct_count / total_questions) * 100, 1) if total_questions > 0 else 0
         theta = person_thetas[s]
         p_fit = fit['person_stats'][s]
 
@@ -900,18 +899,30 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         )
         rasch_normalized = round(expected_pct, 2)
 
-        fan1_corr_w = sum(question_weights[j] for j in fan1_indices if response_matrix[s][j] == 1)
-        fan2_corr_w = sum(question_weights[j] for j in fan2_indices if response_matrix[s][j] == 1)
+        # Foiz hisoblash: 65 ball va undan yuqori -> 100%, kam bo'lsa (ball * 100 / 65)
+        if rasch_normalized >= 65.0:
+            calc_pct = 100.0
+        else:
+            calc_pct = max(0.0, min(100.0, (rasch_normalized * 100.0) / 65.0))
 
-        fan1_score = round((fan1_corr_w / fan1_max_w) * 104.0, 1) if fan1_max_w > 0 else 0.0
-        fan2_score = round((fan2_corr_w / fan2_max_w) * 74.0, 1) if fan2_max_w > 0 else 0.0
+        x_frac = calc_pct / 100.0  # kasr ko'rinishida [0.0 .. 1.0]
+
+        # 1-Fan va 2-Fan ballari:
+        # 1-Fan = 93 * x + 11
+        # 2-Fan = 63 * x + 11
+        if correct_count > 0:
+            fan1_score = round(93.0 * x_frac + 11.0, 1)
+            fan2_score = round(63.0 * x_frac + 11.0, 1)
+        else:
+            fan1_score = 0.0
+            fan2_score = 0.0
 
         user_scores.append({
             'user': sub.user.full_name or sub.user.username or f"ID: {sub.user.telegram_id}",
             'user_id': sub.user.telegram_id,
             'correct': correct_count,
             'total': total_questions,
-            'percentage': percentage,
+            'percentage': round(calc_pct, 1),
             'rasch_score': round(theta, 2),
             'rasch_normalized': rasch_normalized,
             'fan1_score': fan1_score,
