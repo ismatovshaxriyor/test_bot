@@ -873,6 +873,18 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         item_difficulties, [row['se'] for row in fit['item_stats']]
     )
 
+    # 1-Fan va 2-Fan bo'limlari (55 ta item bo'lsa: 1-35 savollar 1-Fan [35 item], 36-45 savollar 2-Fan [20 item])
+    if total_questions == 55:
+        fan1_indices = list(range(0, 35))
+        fan2_indices = list(range(35, 55))
+    else:
+        half = total_questions // 2
+        fan1_indices = list(range(0, half))
+        fan2_indices = list(range(half, total_questions))
+
+    fan1_max_w = sum(question_weights[j] for j in fan1_indices) if question_weights else 1.0
+    fan2_max_w = sum(question_weights[j] for j in fan2_indices) if question_weights else 1.0
+
     user_scores = []
 
     for s, sub in enumerate(submissions):
@@ -886,7 +898,13 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             sum(_sigmoid(theta - beta) for beta in item_difficulties) / total_questions * 100.0
             if total_questions > 0 else 0.0
         )
-        rasch_normalized = round(expected_pct, 1)
+        rasch_normalized = round(expected_pct, 2)
+
+        fan1_corr_w = sum(question_weights[j] for j in fan1_indices if response_matrix[s][j] == 1)
+        fan2_corr_w = sum(question_weights[j] for j in fan2_indices if response_matrix[s][j] == 1)
+
+        fan1_score = round((fan1_corr_w / fan1_max_w) * 104.0, 1) if fan1_max_w > 0 else 0.0
+        fan2_score = round((fan2_corr_w / fan2_max_w) * 74.0, 1) if fan2_max_w > 0 else 0.0
 
         user_scores.append({
             'user': sub.user.full_name or sub.user.username or f"ID: {sub.user.telegram_id}",
@@ -896,6 +914,8 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             'percentage': percentage,
             'rasch_score': round(theta, 2),
             'rasch_normalized': rasch_normalized,
+            'fan1_score': fan1_score,
+            'fan2_score': fan2_score,
             'se': p_fit['se'],
             'infit': p_fit['infit'],
             'outfit': p_fit['outfit'],

@@ -88,7 +88,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     row = 8
 
     if rasch_mode:
-        headers = ["#", "Ism", "To'g'ri", "Jami", "Ball", "SE", "Daraja", "Fit"]
+        headers = ["#", "Ism", "Umumiy ball", "Foiz", "Daraja", "1-Fan", "2-Fan"]
     else:
         headers = ["#", "Ism", "To'g'ri", "Jami", "Ball"]
 
@@ -107,24 +107,27 @@ def export_to_excel(stats: Dict, test: Test) -> str:
         num = i + 1
         r = row + 1 + i
 
-        ball = round(sub.get('rasch_normalized', sub['percentage']) if rasch_mode else sub['percentage'], 1)
+        ball = round(sub.get('rasch_normalized', sub['percentage']) if rasch_mode else sub['percentage'], 2 if rasch_mode else 1)
 
         ws.cell(row=r, column=1, value=num).border = thin_border
         ws.cell(row=r, column=2, value=_clean_text(sub['user'])).border = thin_border
-        ws.cell(row=r, column=3, value=sub['correct']).border = thin_border
-        ws.cell(row=r, column=4, value=sub['total']).border = thin_border
-        ws.cell(row=r, column=5, value=ball).border = thin_border
+
         if rasch_mode:
-            se = sub.get('se')
-            ws.cell(row=r, column=6, value=se if se is not None else "-").border = thin_border
             grade = get_grade(ball)
-            ws.cell(row=r, column=7, value=grade).border = thin_border
-            ws.cell(row=r, column=8, value="⚠️" if sub.get('misfit') else "✅").border = thin_border
+            ws.cell(row=r, column=3, value=ball).border = thin_border
+            ws.cell(row=r, column=4, value=f"{int(round(sub['percentage']))}%").border = thin_border
+            ws.cell(row=r, column=5, value=grade).border = thin_border
+            ws.cell(row=r, column=6, value=sub.get('fan1_score', 0.0)).border = thin_border
+            ws.cell(row=r, column=7, value=sub.get('fan2_score', 0.0)).border = thin_border
+
             fill = grade_fills.get(grade)
             if fill:
                 for c in range(1, len(headers) + 1):
                     ws.cell(row=r, column=c).fill = fill
         else:
+            ws.cell(row=r, column=3, value=sub['correct']).border = thin_border
+            ws.cell(row=r, column=4, value=sub['total']).border = thin_border
+            ws.cell(row=r, column=5, value=ball).border = thin_border
             if i % 2 == 1:
                 for c in range(1, len(headers) + 1):
                     ws.cell(row=r, column=c).fill = even_fill
@@ -137,16 +140,14 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     # Ustun kengliklarini moslash
     ws.column_dimensions['A'].width = 5
     ws.column_dimensions['B'].width = 30
-    ws.column_dimensions['C'].width = 10
-    ws.column_dimensions['D'].width = 8
+    ws.column_dimensions['C'].width = 14
+    ws.column_dimensions['D'].width = 10
     ws.column_dimensions['E'].width = 10
-    if rasch_mode:
-        ws.column_dimensions['F'].width = 8
-        ws.column_dimensions['G'].width = 10
-        ws.column_dimensions['H'].width = 8
+    ws.column_dimensions['F'].width = 12
+    ws.column_dimensions['G'].width = 12
 
-    # Savol statistikasi sahifasi
-    if stats.get('question_stats'):
+    # ------------------ SAVOLLAR TAHLILI SHEET ------------------
+    if rasch_mode and stats.get('question_stats'):
         ws2 = wb.create_sheet("Savollar tahlili")
         ws2.merge_cells('A1:D1')
         ws2['A1'] = "📋 Savollar tahlili"
@@ -314,7 +315,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         parent=styles['Title'],
         fontName=bold_font,
         fontSize=16,
-        textColor=colors.HexColor("#312E81"),
+        textColor=colors.HexColor("#1E293B"),
         alignment=TA_CENTER,
         spaceAfter=4,
     )
@@ -323,7 +324,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         parent=styles['Normal'],
         fontName=font,
         fontSize=10,
-        textColor=colors.HexColor("#4338CA"),
+        textColor=colors.HexColor("#475569"),
         alignment=TA_CENTER,
         spaceAfter=14,
     )
@@ -331,37 +332,36 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         'GradeNote',
         parent=styles['Normal'],
         fontName=font,
-        fontSize=7,
-        textColor=colors.HexColor("#6B7280"),
+        fontSize=8,
+        textColor=colors.HexColor("#64748B"),
         spaceBefore=10,
     )
 
     # Sarlavha va umumiy ma'lumot
     elems = [
-        Paragraph(f"Test #{test.id} — natijalar", title_style),
+        Paragraph(f"Test #{test.id} — Natijalar", title_style),
         Paragraph(
-            f"Ishtirokchilar: <b>{stats['total_submissions']}</b> &nbsp;·&nbsp; "
-            f"Savollar: <b>{test.total_questions}</b> &nbsp;·&nbsp; "
+            f"Ishtirokchilar: <b>{stats['total_submissions']} ta</b> &nbsp;·&nbsp; "
             f"Baholash: <b>{mode_text}</b>",
             subtitle_style,
         ),
         Spacer(1, 6),
     ]
 
-    # Daraja ranglari (rasch mode uchun)
+    # Daraja ranglari (rasch mode uchun — foydalanuvchi rasmidagi shkala bo'yicha)
     grade_bg_colors = {
-        'A+': colors.HexColor("#22B14C"),
-        'A':  colors.HexColor("#7BC67E"),
+        'A+': colors.HexColor("#A8E6CF"),
+        'A':  colors.HexColor("#C6EFCE"),
         'B+': colors.HexColor("#FFF200"),
         'B':  colors.HexColor("#FFD966"),
         'C+': colors.HexColor("#F4B183"),
         'C':  colors.HexColor("#FF7F7F"),
-        '-':  colors.HexColor("#D9D9D9"),
+        '-':  colors.HexColor("#E0E0E0"),
     }
 
-    # Jadval sarlavhalari
+    # Jadval sarlavhalari (rasmdagi tartib bo'yicha)
     if rasch_mode:
-        header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball", "Daraja"]
+        header_row = ["#", "Foydalanuvchi", "Umumiy ball", "Foiz", "Daraja", "1-Fan", "2-Fan"]
     else:
         header_row = ["#", "Foydalanuvchi", "To'g'ri", "Jami", "Ball"]
     rows = [header_row]
@@ -369,56 +369,58 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     # Natijalar satrlari
     for i, sub in enumerate(stats['submissions'], 1):
         name = _clean_text(sub['user']) or "—"
-        ball = round(
-            sub.get('rasch_normalized', sub['percentage'])
-            if rasch_mode else sub['percentage'],
-            1,
-        )
-        row = [str(i), name, str(sub['correct']), str(sub['total']), f"{ball}"]
         if rasch_mode:
-            grade = get_grade(ball)
-            row.append(grade)
+            ball_num = sub.get('rasch_normalized', sub['percentage'])
+            grade = get_grade(ball_num)
+            row = [
+                str(i),
+                name,
+                f"{ball_num:.2f}",
+                f"{int(round(sub['percentage']))}%",
+                grade,
+                f"{sub.get('fan1_score', 0.0):.1f}",
+                f"{sub.get('fan2_score', 0.0):.1f}",
+            ]
+        else:
+            ball_num = sub['percentage']
+            row = [str(i), name, str(sub['correct']), str(sub['total']), f"{ball_num:.1f}%"]
         rows.append(row)
 
-    # Ustun kengliklari (A4 = 595pt, chapdan 35+35 = 70pt margin)
+    # Ustun kengliklari (A4 = 595pt, chap/o'ng margin 35pt -> avail = 525pt)
     avail_width = A4[0] - 70
     if rasch_mode:
         col_widths = [
-            avail_width * 0.06,   # #
-            avail_width * 0.44,   # Ism
-            avail_width * 0.13,   # To'g'ri
-            avail_width * 0.11,   # Jami
-            avail_width * 0.14,   # Ball
-            avail_width * 0.12,   # Daraja
+            25,                    # #
+            avail_width - 345,     # Foydalanuvchi
+            75,                    # Umumiy ball
+            55,                    # Foiz
+            55,                    # Daraja
+            67,                    # 1-Fan
+            67,                    # 2-Fan
         ]
     else:
         col_widths = [
-            avail_width * 0.07,   # #
-            avail_width * 0.53,   # Ism
-            avail_width * 0.13,   # To'g'ri
-            avail_width * 0.12,   # Jami
-            avail_width * 0.15,   # Ball
+            30,
+            avail_width - 240,
+            70,
+            70,
+            70,
         ]
 
     table = Table(rows, repeatRows=1, hAlign="CENTER", colWidths=col_widths)
 
-    # Asosiy jadval stili
+    # Asosiy jadval stili (rasmdagi kabi och ko'k header va qora chegaralar)
     style_commands = [
-        # Font
         ("FONTNAME",       (0, 0), (-1, 0),  bold_font),
         ("FONTNAME",       (0, 1), (-1, -1), font),
         ("FONTSIZE",       (0, 0), (-1, 0),  9),
         ("FONTSIZE",       (0, 1), (-1, -1), 9),
-        # Header fon va rang
-        ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#4472C4")),
-        ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
-        # Grid
-        ("GRID",           (0, 0), (-1, -1), 0.4, colors.HexColor("#D0D0D0")),
-        # Tekislash
+        ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#B4C6E7")),
+        ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.black),
+        ("GRID",           (0, 0), (-1, -1), 0.5, colors.black),
         ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
-        ("ALIGN",          (1, 0), (1, -1),  "LEFT"),   # Ism ustuni chapga
+        ("ALIGN",          (1, 0), (1, -1),  "LEFT"),
         ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-        # Padding
         ("TOPPADDING",     (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
         ("LEFTPADDING",    (0, 0), (-1, -1), 6),
@@ -427,23 +429,15 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
     # Qator ranglari
     if rasch_mode:
-        # Rasch: daraja bo'yicha rang berish
         for i, sub in enumerate(stats['submissions'], 1):
-            ball = round(
-                sub.get('rasch_normalized', sub['percentage']),
-                1,
-            )
-            grade = get_grade(ball)
+            ball_num = sub.get('rasch_normalized', sub['percentage'])
+            grade = get_grade(ball_num)
             bg = grade_bg_colors.get(grade)
             if bg:
-                style_commands.append(
-                    ("BACKGROUND", (0, i), (-1, i), bg)
-                )
+                style_commands.append(("BACKGROUND", (0, i), (-1, i), bg))
     else:
-        # Oddiy: zebra qatorlar
         style_commands.append(
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-             [colors.white, colors.HexColor("#F2F4F4")])
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F4F4")])
         )
 
     table.setStyle(TableStyle(style_commands))
