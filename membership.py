@@ -97,12 +97,44 @@ def get_join_keyboard(channels: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def is_mini_admin_test_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Tekshirilayotgan test Mini-Admin tomonidan yaratilganligini aniqlash.
+
+    Agar foydalanuvchi Mini-Admin yaratgan testni yechish uchun kirgan bo'lsa
+    (/start <test_id> yoki deeplink_solve_<test_id>), majburiy kanal a'zoligi talab qilinmaydi.
+    """
+    test_id_str = None
+
+    # Case 1: /start <test_id>
+    if context and context.args and len(context.args) > 0:
+        arg = str(context.args[0]).strip()
+        if arg.isdigit():
+            test_id_str = arg
+
+    # Case 2: Callback query deeplink_solve_<test_id>
+    if not test_id_str and update and update.callback_query and update.callback_query.data:
+        data = update.callback_query.data
+        if data.startswith("deeplink_solve_"):
+            test_id_str = data.rsplit("_", 1)[-1]
+
+    if test_id_str and test_id_str.isdigit():
+        try:
+            from database import Test
+            test = Test.get_by_id(int(test_id_str))
+            if test and test.creator and getattr(test.creator, "is_mini_admin", False):
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
 def membership_required(func):
     """
     Kanal a'zoligini tekshirish decorator
 
     Agar foydalanuvchi kanallarga a'zo bo'lmasa,
-    qo'shilish tugmalarini ko'rsatadi
+    qo'shilish tugmalarini ko'rsatadi. Mini-admin yaratgan testlar uchun a'zolik shart emas.
     """
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -110,6 +142,11 @@ def membership_required(func):
         if not user:
             logger.warning("MEMBERSHIP CHECK: effective_user missing")
             return None
+
+        # Mini-admin yaratgan testni yechish bo'lsa — majburiy kanal a'zoligi talab qilinmaydi
+        if is_mini_admin_test_context(update, context):
+            logger.info("MEMBERSHIP CHECK SKIPPED: mini-admin test context user_id=%s", user.id)
+            return await func(update, context, *args, **kwargs)
 
         # A'zolikni tekshirish
         all_joined, not_joined = await check_user_membership(context.bot, user.id)

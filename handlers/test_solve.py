@@ -266,13 +266,33 @@ async def remind_full_name_needed_for_solve(update: Update, context: ContextType
     return WAITING_FULL_NAME_FOR_SOLVE
 
 
-@membership_required
 async def receive_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test kodini qabul qilish"""
     code = update.message.text.strip().upper()
     if code == "ORTGA":
         return await cancel_solve(update, context)
-        
+
+    # Mini-admin testi ekanligini tekshirish — agar shunday bo'lsa a'zolik majburiy emas
+    if code.isdigit():
+        try:
+            test = Test.get_by_id(int(code))
+            if test and test.creator and getattr(test.creator, "is_mini_admin", False):
+                return await process_test_code(update, context, code)
+        except Exception:
+            pass
+
+    # Oddiy test bo'lsa a'zolikni tekshirish
+    from membership import check_user_membership, get_join_keyboard
+    user = update.effective_user
+    all_joined, not_joined = await check_user_membership(context.bot, user.id)
+    if not all_joined:
+        text = (
+            "⚠️ <b>A'zolik talab qilinadi!</b>\n\n"
+            "Botdan foydalanish uchun quyidagi kanallarga a'zo bo'ling:\n"
+        )
+        await update.message.reply_html(text, reply_markup=get_join_keyboard(not_joined))
+        return WAITING_TEST_CODE
+
     return await process_test_code(update, context, code)
 
 

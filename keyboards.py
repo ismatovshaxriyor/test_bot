@@ -10,10 +10,13 @@ def main_menu_keyboard(user_id=None):
     """
     keyboard = [
         [
-            KeyboardButton("📝 Test yaratish"),
-            KeyboardButton("✍️ Test yechish")
+            KeyboardButton("📊 Oddiy test yaratish"),
+            KeyboardButton("📐 Rash test yaratish")
         ],
-        [KeyboardButton("👤 Profil")],
+        [
+            KeyboardButton("✍️ Test yechish"),
+            KeyboardButton("👤 Profil")
+        ],
     ]
     if user_id is not None:
         try:

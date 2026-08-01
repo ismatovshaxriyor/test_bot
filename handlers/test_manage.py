@@ -365,7 +365,7 @@ async def mytests_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not tests:
         await update.message.reply_text(
             "📭 Siz hali test yaratmagansiz.\n\n"
-            "\"📝 Test yaratish\" tugmasini bosing.",
+            "\"📊 Oddiy test yaratish\" yoki \"📐 Rash test yaratish\" tugmasini bosing.",
             reply_markup=profile_menu_keyboard()
         )
         return

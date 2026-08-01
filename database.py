@@ -32,6 +32,7 @@ class User(BaseModel):
     # avtomatik nom — get_or_create_user shuni Telegram bilan sinxronlab turadi.
     full_name_confirmed = BooleanField(default=False)
     is_admin = BooleanField(default=False)
+    is_mini_admin = BooleanField(default=False)
     created_at = DateTimeField(default=datetime.now)
 
     class Meta:
@@ -193,6 +194,18 @@ def _migrate_add_full_name_confirmed():
         pass
 
 
+def _migrate_add_is_mini_admin():
+    """Mavjud `users` jadvaliga `is_mini_admin` ustunini xavfsiz qo'shish."""
+    try:
+        cols = [row[1] for row in db.execute_sql("PRAGMA table_info(users)").fetchall()]
+        if "is_mini_admin" not in cols:
+            db.execute_sql(
+                "ALTER TABLE users ADD COLUMN is_mini_admin BOOLEAN DEFAULT 0"
+            )
+    except Exception:
+        pass
+
+
 class SystemSetting(BaseModel):
     """Tizim sozlamalari jadvali"""
     key = CharField(unique=True)
@@ -210,6 +223,7 @@ def init_db():
     _migrate_add_test_source()
     _migrate_questions_unique_index()
     _migrate_add_full_name_confirmed()
+    _migrate_add_is_mini_admin()
     
     # Default sozlamalarni o'rnatish
     SystemSetting.get_or_create(key="backup_enabled", defaults={"value": "1"})

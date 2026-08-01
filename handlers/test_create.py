@@ -86,27 +86,47 @@ def _normalize_rasch_questions(questions: list) -> list:
     return normalized
 
 
-async def _show_mode_choice(message):
-    """Test turini tanlash klaviaturasini ko'rsatish."""
-    keyboard = ReplyKeyboardMarkup([
-        [KeyboardButton("📊 Oddiy test"), KeyboardButton("📐 Rash test")],
-        [KeyboardButton("Ortga")],
-    ], resize_keyboard=True)
+async def _show_mode_instructions(message, mode: str):
+    """Tanlangan test rejimiga mos ko'rsatma va tugmalarni ko'rsatish."""
+    if mode == "rasch":
+        keyboard = ReplyKeyboardMarkup([
+            [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))],
+            [KeyboardButton("Ortga")]
+        ], resize_keyboard=True)
 
-    await message.reply_html(
-        "📝 <b>Test yaratish</b>\n\n"
-        "Qaysi turdagi test yaratmoqchisiz?",
-        reply_markup=keyboard
-    )
+        await message.reply_html(
+            "📐 <b>Rash test yaratish</b>\n\n"
+            "Pastdagi «📲 Ilova» tugmasini bosib yarating.",
+            reply_markup=keyboard
+        )
+    else:
+        keyboard = ReplyKeyboardMarkup([
+            [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))],
+            [KeyboardButton("Ortga")]
+        ], resize_keyboard=True)
+
+        await message.reply_html(
+            "📊 <b>Oddiy test yaratish</b>\n\n"
+            "To'g'ri javoblarni quyidagi ikki usuldan birida yuboring:\n\n"
+            "1️⃣ <b>Klassik usul</b> — harflarni ketma-ket yozing:\n"
+            "   <code>aabbcabacbad</code>\n\n"
+            "2️⃣ <b>Raqamli usul</b> — raqam + harf bilan yozing:\n"
+            "   <code>1a2a3b4c5a6b</code>\n"
+            "   <code>1-a 2-a 3-b 4-c</code>\n\n"
+            "📌 Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n"
+            "📌 Yoki pastdagi «📲 Ilova» tugmasi orqali yarating.\n\n"
+            "❌ Bekor qilish: /cancel yoki Ortga",
+            reply_markup=keyboard
+        )
+    return WAITING_ANSWERS
 
 
 @membership_required
 async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Test yaratish — avval to'liq ism tasdiqlanganini, so'ng turini tanlash.
+    """Test yaratish tugmalari (Oddiy yoki Rash test yaratish) bosilganda."""
+    text = (update.message.text or "").strip()
+    mode = "rasch" if "rash" in text.lower() else "simple"
 
-    Bosh menyu yashiriladi: o'rniga faqat tur-tanlash tugmalari ko'rsatiladi,
-    shunda foydalanuvchi bo'lim ichida adashib boshqa menyu tugmasini bosmaydi.
-    """
     user = update.effective_user
     db_user = get_or_create_user(
         telegram_id=user.id,
@@ -114,14 +134,12 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         full_name=user.full_name or user.first_name
     )
 
-    # Ism tasdiqlanmagan bo'lsa, test yaratishdan oldin so'raymiz — aks holda
-    # "Yaratuvchi" sifatida ismsiz/soxta nom bilan testlar yaratilib qolishi mumkin.
     if not db_user.full_name_confirmed:
+        context.user_data["pending_test_mode"] = mode
         await _ask_full_name(update.message)
         return WAITING_FULL_NAME_FOR_CREATE
 
-    await _show_mode_choice(update.message)
-    return CHOOSING_MODE
+    return await _show_mode_instructions(update.message, mode)
 
 
 async def receive_full_name_for_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,8 +163,8 @@ async def receive_full_name_for_create(update: Update, context: ContextTypes.DEF
 
     await update.message.reply_html(f"✅ Rahmat, <b>{escape(normalized)}</b>!")
 
-    await _show_mode_choice(update.message)
-    return CHOOSING_MODE
+    mode = context.user_data.pop("pending_test_mode", "simple")
+    return await _show_mode_instructions(update.message, mode)
 
 
 async def remind_full_name_needed_for_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,38 +183,10 @@ async def choose_mode_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return await cancel_command(update, context)
 
     if text == "📐 Rash test":
-        keyboard = ReplyKeyboardMarkup([
-            [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rasch?v={WEBAPP_VERSION}"))],
-            [KeyboardButton("Ortga")]
-        ], resize_keyboard=True)
-
-        await update.message.reply_html(
-            "📐 <b>Rash test yaratish</b>\n\n"
-            "Pastdagi «📲 Ilova» tugmasini bosib yarating.",
-            reply_markup=keyboard
-        )
-        return WAITING_ANSWERS
+        return await _show_mode_instructions(update.message, "rasch")
 
     if text == "📊 Oddiy test":
-        keyboard = ReplyKeyboardMarkup([
-            [KeyboardButton("📲 Ilova", web_app=WebAppInfo(url=f"{WEBAPP_URL}/create?v={WEBAPP_VERSION}"))],
-            [KeyboardButton("Ortga")]
-        ], resize_keyboard=True)
-
-        await update.message.reply_html(
-            "📊 <b>Oddiy test yaratish</b>\n\n"
-            "To'g'ri javoblarni quyidagi ikki usuldan birida yuboring:\n\n"
-            "1️⃣ <b>Klassik usul</b> — harflarni ketma-ket yozing:\n"
-            "   <code>aabbcabacbad</code>\n\n"
-            "2️⃣ <b>Raqamli usul</b> — raqam + harf bilan yozing:\n"
-            "   <code>1a2a3b4c5a6b</code>\n"
-            "   <code>1-a 2-a 3-b 4-c</code>\n\n"
-            "📌 Faqat <b>A, B, C, D</b> harflari bo'lishi kerak.\n"
-            "📌 Yoki pastdagi «📲 Ilova» tugmasi orqali yarating.\n\n"
-            "❌ Bekor qilish: /cancel yoki Ortga",
-            reply_markup=keyboard
-        )
-        return WAITING_ANSWERS
+        return await _show_mode_instructions(update.message, "simple")
 
     await update.message.reply_html("Yuqoridagi tugmalardan birini tanlang.")
     return CHOOSING_MODE
@@ -435,11 +425,13 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def get_handlers():
-    """Bot ichida oddiy test yaratish handlerlari"""
+    """Bot ichida test yaratish handlerlari"""
     conversation_handler = ConversationHandler(
         entry_points=[
             MessageHandler(
-                filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(r"^(📝 Test yaratish|📝 Oddiy test yaratish)$"),
+                filters.ChatType.PRIVATE & filters.TEXT & filters.Regex(
+                    r"^(📊 Oddiy test yaratish|📐 Rash test yaratish|📊 Oddiy test|📐 Rash test|📝 Test yaratish)$"
+                ),
                 create_command
             ),
         ],

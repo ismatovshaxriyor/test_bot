@@ -25,6 +25,7 @@ WAITING_RESULT_CODE = 4        # natija qidirish — test kodini kutish
 WAITING_RESTORE_FILE = 5       # zaxirani tiklash — .db faylni kutish
 WAITING_RESTORE_CONFIRM = 6    # zaxirani tiklash — tasdiqlash
 WAITING_BACKUP_INTERVAL = 7    # zaxira intervalini kutish
+WAITING_MINI_ADMIN_INPUT = 8   # mini admin qo'shishni kutish
 
 
 def is_admin(user_id: int) -> bool:
@@ -58,7 +59,10 @@ def admin_keyboard():
     """Admin panel tugmalari"""
     keyboard = [
         [InlineKeyboardButton("📢 Kanallar", callback_data="admin_channels")],
-        [InlineKeyboardButton("👑 Adminlar", callback_data="admin_admins")],
+        [
+            InlineKeyboardButton("👑 Adminlar", callback_data="admin_admins"),
+            InlineKeyboardButton("⭐ Mini adminlar", callback_data="admin_mini_admins"),
+        ],
         [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="admin_users")],
         [InlineKeyboardButton("📨 Xabar yuborish", callback_data="admin_broadcast")],
         [
@@ -77,6 +81,16 @@ def admins_keyboard():
     keyboard = [
         [InlineKeyboardButton("➕ Admin qo'shish", callback_data="add_admin")],
         [InlineKeyboardButton("📋 Adminlar ro'yxati", callback_data="list_admins")],
+        [InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def mini_admins_keyboard():
+    """Mini adminlar boshqaruvi tugmalari"""
+    keyboard = [
+        [InlineKeyboardButton("➕ Mini admin qo'shish", callback_data="add_mini_admin")],
+        [InlineKeyboardButton("📋 Mini adminlar ro'yxati", callback_data="list_mini_admins")],
         [InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -1303,6 +1317,134 @@ async def delete_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await list_admins_callback(update, context)
 
 
+# ============ MINI ADMIN MANAGEMENT ============
+
+@admin_only
+async def mini_admins_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mini adminlar boshqaruvi menyusi"""
+    query = update.callback_query
+    await query.answer()
+
+    text = "⭐ <b>Mini adminlar boshqaruvi</b>\n\n"
+    text += "Mini adminlar yaratgan testlar boshqalar tomonidan majburiy kanal a'zoligisiz yechiladi."
+
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=mini_admins_keyboard())
+
+
+@admin_only
+async def add_mini_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mini admin qo'shishni boshlash"""
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.edit_text(
+        "⭐ <b>Mini admin qo'shish</b>\n\n"
+        "Foydalanuvchining Telegram ID sini yoki Username ini kiriting:\n\n"
+        "• Masalan: <code>123456789</code> yoki <code>@username</code>\n\n"
+        "💡 Foydalanuvchi kamida bir marta botga /start yuborgan bo'lishi kerak.\n\n"
+        "❌ Bekor qilish: /cancel",
+        parse_mode="HTML"
+    )
+    return WAITING_MINI_ADMIN_INPUT
+
+
+async def receive_mini_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mini admin ID yoki username ni qabul qilish"""
+    text = update.message.text.strip()
+
+    user = None
+    if text.startswith("@"):
+        uname = text.lstrip("@").strip()
+        user = User.get_or_none(User.username == uname)
+    elif text.isdigit():
+        user = User.get_or_none(User.telegram_id == int(text))
+    else:
+        user = User.get_or_none(User.username == text)
+
+    if not user:
+        await update.message.reply_html(
+            "❌ <b>Foydalanuvchi topilmadi!</b>\n\n"
+            "Ushbu foydalanuvchi hali botga /start yubormagan bo'lishi mumkin.\n\n"
+            "❌ Bekor qilish: /cancel"
+        )
+        return WAITING_MINI_ADMIN_INPUT
+
+    if user.is_mini_admin:
+        await update.message.reply_text("⚠️ Bu foydalanuvchi allaqachon Mini admin!")
+        return ConversationHandler.END
+
+    user.is_mini_admin = True
+    user.save()
+
+    display_name = escape(user.full_name or user.username or str(user.telegram_id))
+    await update.message.reply_html(
+        f"✅ <b>Mini admin qo'shildi!</b>\n\n"
+        f"👤 {display_name}\n"
+        f"🆔 <code>{user.telegram_id}</code>"
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=user.telegram_id,
+            text="⭐ Siz <b>Mini admin</b> maqomini oldingiz! Siz yaratgan testlar boshqalar tomonidan majburiy kanalsiz yechiladi.",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    return ConversationHandler.END
+
+
+async def cancel_add_mini_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mini admin qo'shishni bekor qilish"""
+    await update.message.reply_text("❌ Bekor qilindi.")
+    return ConversationHandler.END
+
+
+@admin_only
+async def list_mini_admins_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mini adminlar ro'yxati"""
+    query = update.callback_query
+    await query.answer()
+
+    mini_admins = list(User.select().where(User.is_mini_admin == True))
+
+    text = "⭐ <b>Mini adminlar ro'yxati</b>\n\n"
+
+    if not mini_admins:
+        text += "📋 Hozircha mini adminlar yo'q."
+        keyboard = [[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_mini_admins")]]
+    else:
+        text += "<b>Mavjud mini adminlar:</b>\n"
+        keyboard = []
+        for ma in mini_admins:
+            name = escape(ma.full_name or ma.username or str(ma.telegram_id))
+            text += f"• {name} (<code>{ma.telegram_id}</code>)\n"
+            keyboard.append([
+                InlineKeyboardButton(f"❌ O'chirish: {name[:20]}", callback_data=f"del_madmin_{ma.id}")
+            ])
+        keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="admin_mini_admins")])
+
+    await query.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+@admin_only
+async def delete_mini_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mini admindan maqomni olib tashlash"""
+    query = update.callback_query
+    db_id = query.data.replace("del_madmin_", "")
+
+    try:
+        user = User.get_by_id(int(db_id))
+        user.is_mini_admin = False
+        user.save()
+        await query.answer("✅ Mini adminlikdan chiqarildi!", show_alert=True)
+    except (ValueError, User.DoesNotExist):
+        await query.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+
+    await list_mini_admins_callback(update, context)
+
+
 @admin_only
 async def whois_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/whois <id> — ID'ni bosiladigan Telegram mention'iga aylantiradi.
@@ -1574,6 +1716,17 @@ def get_handlers():
         allow_reentry=True,
     )
 
+    # Mini admin qo'shish conversation
+    add_mini_admin_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(add_mini_admin_callback, pattern=r"^add_mini_admin$")],
+        states={
+            WAITING_MINI_ADMIN_INPUT: [
+                MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, receive_mini_admin_input)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_add_mini_admin)],
+    )
+
     return [
         CommandHandler("admin", admin_command, filters=filters.ChatType.PRIVATE),
         # Bosh menyudagi "👑 Admin panel" tugmasi — /admin bilan bir xil panelni ochadi
@@ -1584,6 +1737,7 @@ def get_handlers():
         CommandHandler("whois", whois_command, filters=filters.ChatType.PRIVATE),
         add_channel_conv,
         add_admin_conv,
+        add_mini_admin_conv,
         broadcast_conv,
         search_result_conv,
         restore_conv,
@@ -1598,6 +1752,9 @@ def get_handlers():
         CallbackQueryHandler(admins_callback, pattern=r"^admin_admins$"),
         CallbackQueryHandler(list_admins_callback, pattern=r"^list_admins$"),
         CallbackQueryHandler(delete_admin_callback, pattern=r"^del_admin_"),
+        CallbackQueryHandler(mini_admins_callback, pattern=r"^admin_mini_admins$"),
+        CallbackQueryHandler(list_mini_admins_callback, pattern=r"^list_mini_admins$"),
+        CallbackQueryHandler(delete_mini_admin_callback, pattern=r"^del_madmin_"),
         CallbackQueryHandler(users_callback, pattern=r"^admin_users$"),
         CallbackQueryHandler(tests_callback, pattern=r"^admin_tests$"),
         CallbackQueryHandler(admin_active_tests_callback, pattern=r"^admin_active_tests$"),

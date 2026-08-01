@@ -18,10 +18,10 @@ HELP_TEXT = """
 🤖 <b>Test Bot - Yordam</b>
 
 <b>📝 Test yaratish:</b>
-1. "📝 Test yaratish" tugmasini bosing
+1. "📊 Oddiy test yaratish" yoki "📐 Rash test yaratish" tugmasini bosing
 2. Variantlarni kiriting (masalan: <code>aabbccdd...</code>)
 3. Bot test kodini yuboradi
-4. Pastdagi "🚀 Kengaytirilgan yaratish" tugmasi bilan ilovaga o'ting
+4. Yoki pastdagi «📲 Ilova» tugmasi bilan ilovaga o'ting
 
 <b>✍️ Test yechish:</b>
 1. "✍️ Test yechish" tugmasini bosing
