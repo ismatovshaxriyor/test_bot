@@ -114,11 +114,17 @@ def export_to_excel(stats: Dict, test: Test) -> str:
 
         if rasch_mode:
             grade = get_grade(ball)
+            f1_val = sub.get('fan1_score', '-')
+            f2_val = sub.get('fan2_score', '-')
+            if grade == "-":
+                f1_val = "-"
+                f2_val = "-"
+
             ws.cell(row=r, column=3, value=ball).border = thin_border
             ws.cell(row=r, column=4, value=f"{int(round(sub['percentage']))}%").border = thin_border
             ws.cell(row=r, column=5, value=grade).border = thin_border
-            ws.cell(row=r, column=6, value=sub.get('fan1_score', 0.0)).border = thin_border
-            ws.cell(row=r, column=7, value=sub.get('fan2_score', 0.0)).border = thin_border
+            ws.cell(row=r, column=6, value=f1_val).border = thin_border
+            ws.cell(row=r, column=7, value=f2_val).border = thin_border
 
             fill = grade_fills.get(grade)
             if fill:
@@ -372,14 +378,24 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         if rasch_mode:
             ball_num = sub.get('rasch_normalized', sub['percentage'])
             grade = get_grade(ball_num)
+
+            f1 = sub.get('fan1_score', '-')
+            f2 = sub.get('fan2_score', '-')
+            if grade == "-":
+                f1_str = "-"
+                f2_str = "-"
+            else:
+                f1_str = f"{f1:.1f}" if isinstance(f1, (int, float)) else str(f1)
+                f2_str = f"{f2:.1f}" if isinstance(f2, (int, float)) else str(f2)
+
             row = [
                 str(i),
                 name,
                 f"{ball_num:.2f}",
                 f"{int(round(sub['percentage']))}%",
                 grade,
-                f"{sub.get('fan1_score', 0.0):.1f}",
-                f"{sub.get('fan2_score', 0.0):.1f}",
+                f1_str,
+                f2_str,
             ]
         else:
             ball_num = sub['percentage']

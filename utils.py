@@ -910,12 +910,13 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         # 1-Fan va 2-Fan ballari:
         # 1-Fan = 93 * x + 11
         # 2-Fan = 63 * x + 11
-        if correct_count > 0:
+        # Agar foiz < 46% bo'lsa (daraja '-'), 1- va 2-fanlarga ham ball berilmaydi ('-')
+        if calc_pct >= 46.0:
             fan1_score = round(93.0 * x_frac + 11.0, 1)
             fan2_score = round(63.0 * x_frac + 11.0, 1)
         else:
-            fan1_score = 0.0
-            fan2_score = 0.0
+            fan1_score = "-"
+            fan2_score = "-"
 
         user_scores.append({
             'user': sub.user.full_name or sub.user.username or f"ID: {sub.user.telegram_id}",
