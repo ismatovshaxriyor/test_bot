@@ -94,26 +94,31 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
             se_part = f" ± {row['se']}" if row and row.get("se") is not None else ""
             result_line = (
                 f"📐 <b>Natijangiz:</b> {rounded_score}{se_part} ball\n"
-                f"🏅 <b>Daraja:</b> {grade}"
+                f"🏅 <b>Daraja:</b> {grade}\n"
+                f"📊 <b>To'g'ri javoblar:</b> {submission.correct_count}/{submission.total_count}"
             )
             if row and row.get("misfit"):
                 result_line += (
                     "\n⚠️ <i>Javoblaringiz namunasi Rash modeliga to'liq mos kelmadi "
                     "(g'ayrioddiy taxmin yoki xatolar) — natija taxminiyroq bo'lishi mumkin.</i>"
                 )
+            text = (
+                "📢 <b>Test yakunlandi!</b>\n\n"
+                f"📝 Test: <code>{test.id}</code>\n"
+                f"{result_line}"
+            )
         else:
             result_line = (
                 f"✅ <b>Natijangiz:</b> "
                 f"{submission.correct_count}/{submission.total_count} ({submission.percentage}%)"
             )
-
-        wrong_block = _build_incorrect_answers_text(test, submission.answers)
-        text = (
-            "📢 <b>Test yakunlandi!</b>\n\n"
-            f"📝 Test: <code>{test.id}</code>\n"
-            f"{result_line}\n\n"
-            f"{wrong_block}"
-        )
+            wrong_block = _build_incorrect_answers_text(test, submission.answers)
+            text = (
+                "📢 <b>Test yakunlandi!</b>\n\n"
+                f"📝 Test: <code>{test.id}</code>\n"
+                f"{result_line}\n\n"
+                f"{wrong_block}"
+            )
 
         try:
             await context.bot.send_message(
