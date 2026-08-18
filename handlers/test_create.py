@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 CHOOSING_MODE = 0
 WAITING_ANSWERS = 1
 WAITING_FULL_NAME_FOR_CREATE = 2
+WAITING_TEST_NAME = 3
+
+MAX_TEST_NAME_LEN = 150
 
 
 def _normalize_rasch_questions(questions: list) -> list:
@@ -86,6 +89,45 @@ def _normalize_rasch_questions(questions: list) -> list:
     return normalized
 
 
+async def _ask_test_name(message, context: ContextTypes.DEFAULT_TYPE, mode: str):
+    """Test nomini so'rash — WAITING_TEST_NAME holatiga o'tadi.
+
+    `mode` keyinchalik nom qabul qilingach `_show_mode_instructions`ga
+    uzatilishi uchun user_data'da saqlanadi.
+    """
+    context.user_data["pending_test_mode"] = mode
+    keyboard = ReplyKeyboardMarkup([[KeyboardButton("Ortga")]], resize_keyboard=True)
+    await message.reply_html(
+        "✏️ <b>Avval test uchun nom kiriting</b>\n\n"
+        "Masalan: <code>9-sinf Matematika, 2-chorak</code>\n\n"
+        "❌ Bekor qilish: /cancel yoki Ortga",
+        reply_markup=keyboard,
+    )
+    return WAITING_TEST_NAME
+
+
+async def receive_test_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """WAITING_TEST_NAME — test nomini qabul qilish (majburiy)."""
+    text = (update.message.text or "").strip()
+
+    if text.lower() in ("ortga", "❌ bekor qilish"):
+        return await cancel_command(update, context)
+
+    if not text:
+        await update.message.reply_html("❌ Nom bo'sh bo'lmasligi kerak. Qaytadan kiriting.")
+        return WAITING_TEST_NAME
+
+    if len(text) > MAX_TEST_NAME_LEN:
+        await update.message.reply_html(
+            f"❌ Nom juda uzun (maksimal {MAX_TEST_NAME_LEN} belgi). Qaytadan kiriting."
+        )
+        return WAITING_TEST_NAME
+
+    context.user_data["pending_test_name"] = text
+    mode = context.user_data.pop("pending_test_mode", "simple")
+    return await _show_mode_instructions(update.message, mode)
+
+
 async def _show_mode_instructions(message, mode: str):
     """Tanlangan test rejimiga mos ko'rsatma va tugmalarni ko'rsatish."""
     if mode == "rasch":
@@ -139,7 +181,7 @@ async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _ask_full_name(update.message)
         return WAITING_FULL_NAME_FOR_CREATE
 
-    return await _show_mode_instructions(update.message, mode)
+    return await _ask_test_name(update.message, context, mode)
 
 
 async def receive_full_name_for_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -164,7 +206,7 @@ async def receive_full_name_for_create(update: Update, context: ContextTypes.DEF
     await update.message.reply_html(f"✅ Rahmat, <b>{escape(normalized)}</b>!")
 
     mode = context.user_data.pop("pending_test_mode", "simple")
-    return await _show_mode_instructions(update.message, mode)
+    return await _ask_test_name(update.message, context, mode)
 
 
 async def remind_full_name_needed_for_create(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,10 +257,12 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Bot ichidagi tezkor rejim faqat oddiy test uchun
     scoring_mode = "simple"
+    test_name = context.user_data.pop("pending_test_name", "Test")
 
     # Testni saqlash
     try:
         test = Test.create(
+            name=test_name,
             correct_answers=answers,
             creator=db_user,
             is_active=True,
@@ -239,6 +283,7 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=ADMIN_ID,
                 text=f"📢 <b>Yangi test yaratildi!</b>\n\n"
                      f"👤 Yaratuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
+                     f"📌 Nomi: {escape(test_name)}\n"
                      f"📝 Kod: <code>{test_id}</code>\n"
                      f"❓ Savollar: {len(answers)} ta\n"
                      f"📐 Baholash: {mode_text}",
@@ -256,11 +301,12 @@ async def receive_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_html(
         f"✅ <b>Test yaratildi!</b>\n\n"
+        f"📌 Nomi: <b>{escape(test_name)}</b>\n"
         f"📝 Test kodi: <code>{test_id}</code>\n"
         f"❓ Savollar soni: {len(answers)} ta\n"
         f"📐 Baholash: {mode_text}\n\n"
         f"Bu kodni boshqalarga yuboring!",
-        reply_markup=test_created_keyboard(test_id, bot_username, len(answers))
+        reply_markup=test_created_keyboard(test_id, bot_username, len(answers), test_name)
     )
 
     await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
@@ -359,7 +405,10 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
             full_name=user.full_name or user.first_name
         )
 
+        test_name = context.user_data.pop("pending_test_name", "Test")
+
         test = Test.create(
+            name=test_name,
             correct_answers=answers_str,
             creator=db_user,
             is_active=True,
@@ -376,6 +425,7 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     chat_id=ADMIN_ID,
                     text=f"📢 <b>Yangi test yaratildi!</b>\n\n"
                          f"👤 Yaratuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
+                         f"📌 Nomi: {escape(test_name)}\n"
                          f"📝 Kod: <code>{test_id}</code>\n"
                          f"❓ Savollar: {questions_count} ta\n"
                          f"📐 Baholash: {mode_text}",
@@ -393,11 +443,12 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
         await update.message.reply_html(
             f"✅ <b>Test yaratildi!</b> 🚀\n\n"
+            f"📌 Nomi: <b>{escape(test_name)}</b>\n"
             f"📝 Test kodi: <code>{test_id}</code>\n"
             f"❓ Savollar soni: {questions_count} ta\n"
             f"📐 Baholash: {mode_text}\n\n"
             f"Bu kodni boshqalarga yuboring!",
-            reply_markup=test_created_keyboard(test_id, bot_username, questions_count)
+            reply_markup=test_created_keyboard(test_id, bot_username, questions_count, test_name)
         )
 
         await update.message.reply_text("🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(update.effective_user.id))
@@ -417,6 +468,8 @@ async def webapp_create_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bekor qilish"""
+    context.user_data.pop("pending_test_mode", None)
+    context.user_data.pop("pending_test_name", None)
     await update.message.reply_text(
         "❌ Test yaratish bekor qilindi.",
         reply_markup=main_menu_keyboard(update.effective_user.id)
@@ -450,6 +503,12 @@ def get_handlers():
                 MessageHandler(
                     filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
                     choose_mode_handler
+                ),
+            ],
+            WAITING_TEST_NAME: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_test_name
                 ),
             ],
             WAITING_ANSWERS: [

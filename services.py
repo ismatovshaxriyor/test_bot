@@ -27,7 +27,7 @@ def _storage_answer(q: dict) -> str:
 
 
 def create_rich_test(db_user, questions: List[dict], scoring_mode: str = "simple",
-                     source: str = "ai") -> Test:
+                     source: str = "ai", name: str = "Test") -> Test:
     """Boy savollardan test yaratadi (correct_answers + Question qatorlari).
 
     Args:
@@ -36,6 +36,8 @@ def create_rich_test(db_user, questions: List[dict], scoring_mode: str = "simple
                     1..N tartibda
         scoring_mode: 'simple' yoki 'rasch'
         source: 'ai' | 'file' | 'manual'
+        name: Test nomi. Chaqiruvchi tomonda majburiy so'ralishi kerak — bu yerda
+              faqat xavfsizlik uchun bo'sh/None qiymat "Test"ga almashtiriladi.
 
     Returns:
         Yaratilgan Test obyekti
@@ -45,6 +47,8 @@ def create_rich_test(db_user, questions: List[dict], scoring_mode: str = "simple
     """
     if not questions:
         raise ValueError("Savollar bo'sh — test yaratilmadi.")
+
+    name = (name or "").strip() or "Test"
 
     # Baholash massivi: faqat num/type/answer (mavjud utils.py shuni o'qiydi).
     # Har doim bo'sh bo'lmagan JSON massiv — Test.total_questions to'g'ri ishlashi uchun.
@@ -58,6 +62,7 @@ def create_rich_test(db_user, questions: List[dict], scoring_mode: str = "simple
 
     with db.atomic():
         test = Test.create(
+            name=name,
             correct_answers=correct_json,
             creator=db_user,
             is_active=True,

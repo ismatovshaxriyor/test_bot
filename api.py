@@ -366,6 +366,7 @@ class RichQuestionIn(BaseModel):
 
 class RichTestCreateRequest(BaseModel):
     scoring_mode: str = "simple"
+    name: str = Field(default="", max_length=150)
     # Server tomonda savollar soni cheklangan (DoS/resurs himoyasi)
     questions: list[RichQuestionIn] = Field(..., min_length=1, max_length=200)
 
@@ -423,6 +424,10 @@ def create_rich_test_endpoint(
 
     scoring_mode = payload.scoring_mode if payload.scoring_mode in {"simple", "rasch"} else "simple"
 
+    test_name = payload.name.strip()
+    if not test_name:
+        raise HTTPException(status_code=400, detail="Test nomi kiritilishi shart.")
+
     # Serverda qayta normalizatsiya/validatsiya (clientga ishonmaymiz)
     raw = [q.model_dump() for q in payload.questions]
     try:
@@ -439,7 +444,7 @@ def create_rich_test_endpoint(
             full_name=user.get("full_name") or "",
         )
         test = services.create_rich_test(
-            db_user, questions, scoring_mode=scoring_mode, source="manual"
+            db_user, questions, scoring_mode=scoring_mode, source="manual", name=test_name
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

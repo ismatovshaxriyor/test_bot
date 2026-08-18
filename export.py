@@ -68,24 +68,26 @@ def export_to_excel(stats: Dict, test: Test) -> str:
     # Sarlavha
     rasch_mode = test.scoring_mode == "rasch"
     ws.merge_cells('A1:H1' if rasch_mode else 'A1:E1')
-    ws['A1'] = f"📊 Test natijasi — {test.id}"
+    ws['A1'] = f"📊 Test natijasi — {_clean_text(test.name)}"
     ws['A1'].font = title_font
     ws['A1'].alignment = Alignment(horizontal='center')
 
     # Ma'lumotlar
-    ws['A3'] = "Test kodi:"
-    ws['B3'] = test.id
-    ws['A4'] = "Ishtirokchilar:"
-    ws['B4'] = stats['total_submissions']
-    ws['A5'] = "Savollar soni:"
-    ws['B5'] = test.total_questions
-    ws['A6'] = "Baholash:"
-    ws['B6'] = "Rash modeli" if test.scoring_mode == "rasch" else "Oddiy"
-    for r in range(3, 7):
+    ws['A3'] = "Test nomi:"
+    ws['B3'] = _clean_text(test.name)
+    ws['A4'] = "Test kodi:"
+    ws['B4'] = test.id
+    ws['A5'] = "Ishtirokchilar:"
+    ws['B5'] = stats['total_submissions']
+    ws['A6'] = "Savollar soni:"
+    ws['B6'] = test.total_questions
+    ws['A7'] = "Baholash:"
+    ws['B7'] = "Rash modeli" if test.scoring_mode == "rasch" else "Oddiy"
+    for r in range(3, 8):
         ws[f'A{r}'].font = Font(bold=True)
 
     # Jadval sarlavhalari
-    row = 8
+    row = 9
 
     if rasch_mode:
         headers = ["#", "Ism", "Umumiy ball", "Foiz", "Daraja", "1-Fan", "2-Fan"]
@@ -345,8 +347,9 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
 
     # Sarlavha va umumiy ma'lumot
     elems = [
-        Paragraph(f"Test #{test.id} — Natijalar", title_style),
+        Paragraph(f"{_clean_text(test.name)} — Natijalar", title_style),
         Paragraph(
+            f"Test kodi: <b>#{test.id}</b> &nbsp;·&nbsp; "
             f"Ishtirokchilar: <b>{stats['total_submissions']} ta</b> &nbsp;·&nbsp; "
             f"Baholash: <b>{mode_text}</b>",
             subtitle_style,
@@ -558,7 +561,7 @@ def export_chart(stats: Dict, test: Test) -> str:
         ax.spines[spine].set_visible(False)
 
     # Sarlavha
-    ax.set_title(f'Test {test.id} — Savollar qiyinligi tahlili',
+    ax.set_title(f'{test.name} (#{test.id}) — Savollar qiyinligi tahlili',
                  fontsize=15, fontweight='bold', pad=15)
 
     # Legenda
@@ -653,7 +656,7 @@ def export_question_counts_chart(stats: Dict, test: Test) -> str:
     for spine in ['top', 'right']:
         ax.spines[spine].set_visible(False)
 
-    ax.set_title(f"Test {test.id} — Har bir savol bo'yicha to'g'ri javoblar soni",
+    ax.set_title(f"{test.name} (#{test.id}) — Har bir savol bo'yicha to'g'ri javoblar soni",
                  fontsize=15, fontweight='bold', pad=15)
 
     legend_elements = [
@@ -721,7 +724,7 @@ def export_grade_chart(stats: Dict, test: Test) -> str:
     ax.set_ylabel('Foydalanuvchilar soni', fontsize=12, fontweight='bold')
     ax.set_ylim(0, max_val * 1.2 if max_val else 1)
 
-    ax.set_title(f"Test {test.id} — Baholar bo'yicha taqsimot ({total} ishtirokchi)",
+    ax.set_title(f"{test.name} (#{test.id}) — Baholar bo'yicha taqsimot ({total} ishtirokchi)",
                  fontsize=14, fontweight='bold', pad=15)
 
     ax.yaxis.grid(True, alpha=0.2, linestyle='-')

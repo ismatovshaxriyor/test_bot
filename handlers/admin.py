@@ -385,7 +385,7 @@ async def tests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for test in tests:
         status = "🟢" if test.is_active else "🔴"
-        text += f"{status} <code>{test.id}</code> - {test.total_questions} savol\n"
+        text += f"{status} {escape(test.name)} (<code>{test.id}</code>) - {test.total_questions} savol\n"
 
     total = Test.select().count()
     text += f"\n<b>Jami:</b> {total} ta"
@@ -434,7 +434,7 @@ async def admin_active_tests_callback(update: Update, context: ContextTypes.DEFA
         watching = test.id in watching_ids
         bell = "🔔" if watching else "🔕"
         creator_name = test.creator.full_name or test.creator.username or str(test.creator.telegram_id)
-        text += f"{bell} <code>{test.id}</code> — {test.total_questions} savol | {escape(creator_name)}\n"
+        text += f"{bell} {escape(test.name)} (<code>{test.id}</code>) — {test.total_questions} savol | {escape(creator_name)}\n"
 
         toggle_label = "🔕 Bekor qilish" if watching else "🔔 Kuzatish"
         keyboard.append([
@@ -521,7 +521,7 @@ async def admin_end_test_callback(update: Update, context: ContextTypes.DEFAULT_
     ]
     await query.message.edit_text(
         f"🔴 <b>Testni tugatish</b>\n\n"
-        f"📝 Test: <code>{test_id}</code>\n"
+        f"📝 Test: <b>{escape(test.name)}</b> (#{test_id})\n"
         f"👤 Yaratuvchi: {escape(creator_name)}\n"
         f"📊 Savollar: {test.total_questions}\n\n"
         f"Testni tugatishni tasdiqlaysizmi?\n"
@@ -565,7 +565,7 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
                 chat_id=test.creator.telegram_id,
                 text=(
                     f"ℹ️ <b>Sizning testingiz admin tomonidan yakunlandi.</b>\n\n"
-                    f"📝 Test: <code>{test.id}</code>"
+                    f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})"
                 ),
                 parse_mode="HTML",
             )
@@ -1521,6 +1521,7 @@ async def _send_test_result(message, code: str) -> bool:
         subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
         text = (
             f"📊 <b>Test natijasi</b>\n\n"
+            f"📌 Nomi: <b>{escape(test.name)}</b>\n"
             f"📝 Test kodi: <code>{test.id}</code>\n"
             f"👤 Yaratuvchi: {escape(creator_name)}\n"
             f"❓ Savollar soni: {test.total_questions} ta\n"

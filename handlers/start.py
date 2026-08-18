@@ -74,7 +74,7 @@ async def _continue_start(message, user, db_user, start_args, context=None):
                 )
                 return
             await message.reply_html(
-                f"🎯 <b>Test #{test_code}</b>\n\n"
+                f"🎯 <b>{escape(test.name)}</b> (#{test_code})\n\n"
                 f"❓ Savollar: {test.total_questions} ta\n\n"
                 f"👇 Boshlash uchun tugmani bosing:",
                 reply_markup=deeplink_test_keyboard(test_code)

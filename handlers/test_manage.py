@@ -107,7 +107,7 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
                 )
             text = (
                 "📢 <b>Test yakunlandi!</b>\n\n"
-                f"📝 Test: <code>{test.id}</code>\n"
+                f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})\n"
                 f"{result_line}"
             )
         else:
@@ -118,7 +118,7 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
             wrong_block = _build_incorrect_answers_text(test, submission.answers)
             text = (
                 "📢 <b>Test yakunlandi!</b>\n\n"
-                f"📝 Test: <code>{test.id}</code>\n"
+                f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})\n"
                 f"{result_line}\n\n"
                 f"{wrong_block}"
             )
@@ -187,6 +187,7 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
         subs_count = TestSubmission.select().where(TestSubmission.test == test).count()
         text = (
             f"📊 <b>Test statistikasi</b>\n\n"
+            f"📌 Nomi: <b>{escape(test.name)}</b>\n"
             f"📝 Test kodi: <code>{test.id}</code>\n"
             f"❓ Savollar soni: {test.total_questions} ta\n"
             f"👥 Ishtirokchilar: {subs_count} ta\n\n"
@@ -273,6 +274,7 @@ async def show_end_confirmation(message, context, code: str, user_id: int, edit:
     mode_text = "📐 Rash" if test.scoring_mode == "rasch" else "📊 Oddiy"
     text = (
         f"⚠️ <b>Testni yakunlashni tasdiqlang</b>\n\n"
+        f"📌 Nomi: <b>{escape(test.name)}</b>\n"
         f"📝 Test kodi: <code>{code}</code>\n"
         f"👥 Ishtirokchilar: {subs_count} ta\n"
         f"📐 Baholash: {mode_text}\n\n"
@@ -348,7 +350,7 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=f"📢 <b>Test yakunlandi!</b>\n\n"
-                     f"📝 Test: <code>{code}</code>\n"
+                     f"📝 Test: <b>{escape(test.name)}</b> (#{code})\n"
                      f"👤 Yaratuvchi: {escape(test.creator.full_name or '')}\n"
                      f"👥 Ishtirokchilar: {stats['total_submissions']} ta",
                 parse_mode="HTML"
@@ -432,7 +434,7 @@ async def test_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     status = "🟢 Faol" if test.is_active else "🔴 Yakunlangan"
 
     text = (
-        f"📝 <b>Test: {code}</b>\n\n"
+        f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
         f"❓ Savollar: {test.total_questions} ta\n"
         f"👥 Ishtirokchilar: {subs_count} ta\n"
         f"📊 Holat: {status}\n"
@@ -495,12 +497,12 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ended_subs:
         text += "<b>So'nggi natijalar:</b>\n"
         for sub in sorted(ended_subs, key=lambda s: s.submitted_at, reverse=True)[:5]:
-            text += f"  • <code>{sub.test.id}</code>: {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
+            text += f"  • {escape(sub.test.name)} (<code>{sub.test.id}</code>): {sub.correct_count}/{sub.total_count} ({sub.percentage}%)\n"
 
     if active_subs:
         text += "\n<b>Kutilmoqda (test yakunlanmagan):</b>\n"
         for sub in sorted(active_subs, key=lambda s: s.submitted_at, reverse=True)[:5]:
-            text += f"  • <code>{sub.test.id}</code>: ⏳ natija test yakunlangach e'lon qilinadi\n"
+            text += f"  • {escape(sub.test.name)} (<code>{sub.test.id}</code>): ⏳ natija test yakunlangach e'lon qilinadi\n"
 
     await update.message.reply_html(text, reply_markup=profile_menu_keyboard())
 

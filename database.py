@@ -41,6 +41,9 @@ class User(BaseModel):
 
 class Test(BaseModel):
     """Test modeli"""
+    # Test nomi — yaratishda majburiy so'raladi; ushbu ustun qo'shilishidan oldingi
+    # (migratsiya bilan yangilangan) testlar uchun "Test" standart qiymat sifatida qoladi.
+    name = CharField(default="Test")
     correct_answers = TextField()
     creator = ForeignKeyField(User, backref="tests")
     is_active = BooleanField(default=True)
@@ -206,6 +209,20 @@ def _migrate_add_is_mini_admin():
         pass
 
 
+def _migrate_add_test_name():
+    """Mavjud `tests` jadvaliga `name` ustunini xavfsiz qo'shish.
+
+    SQLite'da ADD COLUMN ... DEFAULT statik qiymati mavjud qatorlarga ham
+    qo'llanadi — shuning uchun oldingi testlar avtomatik "Test" nomini oladi.
+    """
+    try:
+        cols = [row[1] for row in db.execute_sql("PRAGMA table_info(tests)").fetchall()]
+        if "name" not in cols:
+            db.execute_sql("ALTER TABLE tests ADD COLUMN name VARCHAR(255) DEFAULT 'Test'")
+    except Exception:
+        pass
+
+
 class SystemSetting(BaseModel):
     """Tizim sozlamalari jadvali"""
     key = CharField(unique=True)
@@ -224,6 +241,7 @@ def init_db():
     _migrate_questions_unique_index()
     _migrate_add_full_name_confirmed()
     _migrate_add_is_mini_admin()
+    _migrate_add_test_name()
     
     # Default sozlamalarni o'rnatish
     SystemSetting.get_or_create(key="backup_enabled", defaults={"value": "1"})

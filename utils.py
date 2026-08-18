@@ -1125,6 +1125,7 @@ def format_stats(stats: Dict, test: Test) -> str:
         return "📊 Hali hech kim test yechmagan."
 
     text = f"📊 <b>Test statistikasi</b>\n"
+    text += f"📌 Nomi: <b>{escape(test.name)}</b>\n"
     text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
     text += f"❓ Savollar soni: {test.total_questions} ta\n"
@@ -1217,6 +1218,7 @@ def format_stats_simple(stats: Dict, test: Test) -> str:
         return "📊 Hali hech kim test yechmagan."
 
     text = f"📊 <b>Test statistikasi</b>\n"
+    text += f"📌 Nomi: <b>{escape(test.name)}</b>\n"
     text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
     text += f"❓ Savollar soni: {test.total_questions} ta\n"

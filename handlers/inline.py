@@ -1,4 +1,5 @@
 """Inline query handler"""
+from html import escape
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes, InlineQueryHandler
 from uuid import uuid4
@@ -26,12 +27,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     results.append(
                         InlineQueryResultArticle(
                             id=str(uuid4()),
-                            title=f"📝 Test: {code}",
+                            title=f"📝 {test.name}",
                             description=f"❓ {test.total_questions} ta savol • Ulashish uchun bosing",
                             input_message_content=InputTextMessageContent(
                                 message_text=(
                                     f"🎯 <b>Test Yechish Taklifi</b>\n"
                                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                                    f"📌 <b>Nomi:</b> {escape(test.name)}\n"
                                     f"📋 <b>Test kodi:</b> <code>{code}</code>\n"
                                     f"❓ <b>Savollar:</b> {test.total_questions} ta\n\n"
                                     f"━━━━━━━━━━━━━━━━━━━━\n\n"

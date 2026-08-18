@@ -38,10 +38,12 @@ import services
 logger = logging.getLogger(__name__)
 
 # Conversation states
-WAITING_FILE = 0
-FILLING = 1          # javob/rasm to'ldirish (savol-ma-savol)
+WAITING_NAME = 0     # test nomini so'rash (majburiy, birinchi bosqich)
+WAITING_FILE = 1
+FILLING = 2          # javob/rasm to'ldirish (savol-ma-savol)
 
 MAX_FILE_BYTES = 20 * 1024 * 1024  # Telegram getFile cheki ~20MB
+MAX_TEST_NAME_LEN = 150
 
 
 def _answer_letters(q: dict) -> list:
@@ -87,13 +89,21 @@ def _next_action(questions: list):
     return None, None
 
 
-def _ai_keyboard() -> ReplyKeyboardMarkup:
-    """WAITING_FILE keyboardi: fayl yuborish yoki qo'lda WebApp."""
+def _ai_keyboard(test_name: str) -> ReplyKeyboardMarkup:
+    """WAITING_FILE keyboardi: fayl yuborish yoki qo'lda WebApp.
+
+    `test_name` chatda oldindan so'ralgan — WebApp mustaqil (bot suhbatidan
+    tashqari) `fetch()` orqali test yaratgani uchun nom URL query orqali uzatiladi.
+    """
+    from urllib.parse import quote
+
     rows = []
     if WEBAPP_URL:
         rows.append([KeyboardButton(
             "✍️ Qo'lda to'liq kiritish",
-            web_app=WebAppInfo(url=f"{WEBAPP_URL}/create_rich?v={WEBAPP_VERSION}"),
+            web_app=WebAppInfo(
+                url=f"{WEBAPP_URL}/create_rich?v={WEBAPP_VERSION}&name={quote(test_name)}"
+            ),
         )])
     rows.append([KeyboardButton("Ortga")])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
@@ -103,7 +113,7 @@ def _ai_keyboard() -> ReplyKeyboardMarkup:
 
 @membership_required
 async def file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """'📸 Fayldan test' — fayl kutish holatini boshlash."""
+    """'📸 Fayldan test' — avval test nomini so'raydi."""
     # Hozircha bu funksiya faqat adminlar uchun
     from handlers.admin import is_admin
     if not is_admin(update.effective_user.id):
@@ -117,6 +127,35 @@ async def file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("img_test_id", None)
     context.user_data.pop("img_num", None)
     context.user_data.pop("ai_questions", None)
+    context.user_data.pop("pending_test_name", None)
+
+    await update.message.reply_html(
+        "✏️ <b>Avval test uchun nom kiriting</b>\n\n"
+        "Masalan: <code>9-sinf Matematika, 2-chorak</code>\n\n"
+        "❌ Bekor qilish: /cancel yoki Ortga",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Ortga")]], resize_keyboard=True),
+    )
+    return WAITING_NAME
+
+
+async def receive_test_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """WAITING_NAME — test nomini qabul qilib, fayl/WebApp tanlovini ko'rsatish."""
+    text = (update.message.text or "").strip()
+
+    if text.lower() in ("ortga", "❌ bekor qilish"):
+        return await cancel_command(update, context)
+
+    if not text:
+        await update.message.reply_html("❌ Nom bo'sh bo'lmasligi kerak. Qaytadan kiriting.")
+        return WAITING_NAME
+
+    if len(text) > MAX_TEST_NAME_LEN:
+        await update.message.reply_html(
+            f"❌ Nom juda uzun (maksimal {MAX_TEST_NAME_LEN} belgi). Qaytadan kiriting."
+        )
+        return WAITING_NAME
+
+    context.user_data["pending_test_name"] = text
 
     await update.message.reply_html(
         "📸 <b>Fayldan test yaratish</b>\n\n"
@@ -127,7 +166,7 @@ async def file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✍️ Yoki savollarni o'zingiz yozmoqchi bo'lsangiz — pastdagi "
         "<b>Qo'lda to'liq kiritish</b> tugmasini bosing.\n\n"
         "❌ Bekor qilish: /cancel yoki Ortga",
-        reply_markup=_ai_keyboard(),
+        reply_markup=_ai_keyboard(text),
     )
     return WAITING_FILE
 
@@ -345,9 +384,10 @@ async def _finalize_creation(context: ContextTypes.DEFAULT_TYPE, chat_id: int, u
         username=user.username,
         full_name=user.full_name or user.first_name,
     )
+    test_name = context.user_data.pop("pending_test_name", "Test")
     try:
         test = services.create_rich_test(
-            db_user, questions, scoring_mode="simple", source="file"
+            db_user, questions, scoring_mode="simple", source="file", name=test_name
         )
     except Exception as e:
         logger.exception("AI CREATE: test yaratishda xatolik")
@@ -364,6 +404,7 @@ async def _finalize_creation(context: ContextTypes.DEFAULT_TYPE, chat_id: int, u
                 text=(
                     f"📢 <b>Yangi test yaratildi! (AI/fayl)</b>\n\n"
                     f"👤 Yaratuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
+                    f"📌 Nomi: {escape(test.name)}\n"
                     f"📝 Kod: <code>{test.id}</code>\n"
                     f"❓ Savollar: {test.total_questions} ta"
                 ),
@@ -630,6 +671,7 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data.pop("ai_questions", None)
+    context.user_data.pop("pending_test_name", None)
     try:
         await query.message.edit_text("❌ Bekor qilindi.")
     except Exception:
@@ -644,6 +686,7 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/cancel yoki 'Ortga' — oqimni bekor qilish."""
     context.user_data.pop("ai_questions", None)
+    context.user_data.pop("pending_test_name", None)
     await update.message.reply_text(
         "❌ Fayldan test yaratish bekor qilindi.",
         reply_markup=main_menu_keyboard(update.effective_user.id),
@@ -694,6 +737,7 @@ async def handle_rich_test_created(update: Update, context: ContextTypes.DEFAULT
                 text=(
                     f"📢 <b>Yangi test yaratildi! (qo'lda)</b>\n\n"
                     f"👤 Yaratuvchi: {escape(test.creator.full_name or test.creator.username or '')}\n"
+                    f"📌 Nomi: {escape(test.name)}\n"
                     f"📝 Kod: <code>{test.id}</code>\n"
                     f"❓ Savollar: {test.total_questions} ta"
                 ),
@@ -703,7 +747,9 @@ async def handle_rich_test_created(update: Update, context: ContextTypes.DEFAULT
             pass
 
     await update.message.reply_html(
-        f"✅ <b>Test yaratildi!</b>  Kod: <code>{test.id}</code>"
+        f"✅ <b>Test yaratildi!</b>\n\n"
+        f"📌 Nomi: <b>{escape(test.name)}</b>\n"
+        f"📝 Kod: <code>{test.id}</code>"
     )
     await start_image_collection(context, update.message.chat_id, test)
 
@@ -796,12 +842,13 @@ async def _finalize(context: ContextTypes.DEFAULT_TYPE, chat_id: int, test: Test
         chat_id=chat_id,
         text=(
             f"🎉 <b>Test tayyor!</b>\n\n"
+            f"📌 Nomi: <b>{escape(test.name)}</b>\n"
             f"📝 Test kodi: <code>{test.id}</code>\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"Bu kodni boshqalarga yuboring!"
         ),
         parse_mode="HTML",
-        reply_markup=test_created_keyboard(str(test.id), bot_username, test.total_questions),
+        reply_markup=test_created_keyboard(str(test.id), bot_username, test.total_questions, test.name),
     )
     await context.bot.send_message(
         chat_id=chat_id, text="🏠 Asosiy menyu:", reply_markup=main_menu_keyboard(chat_id)
@@ -952,6 +999,12 @@ def get_handlers():
             ),
         ],
         states={
+            WAITING_NAME: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+                    receive_test_name,
+                ),
+            ],
             WAITING_FILE: [
                 MessageHandler(
                     (filters.Document.ALL | filters.PHOTO) & filters.ChatType.PRIVATE,

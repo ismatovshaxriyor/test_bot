@@ -40,7 +40,7 @@ async def _notify_result(context, test, db_user, correct_count, total, percentag
             await context.bot.send_message(
                 chat_id=test.creator.telegram_id,
                 text=f"📢 <b>Yangi natija!</b>\n\n"
-                     f"📝 Test: <code>{test.id}</code>\n"
+                     f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})\n"
                      f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"✅ Natija: {correct_count}/{total} ({percentage}%)",
                 parse_mode="HTML",
@@ -57,7 +57,7 @@ async def _notify_result(context, test, db_user, correct_count, total, percentag
             await context.bot.send_message(
                 chat_id=watcher_tg_id,
                 text=f"🔔 <b>Kuzatuv: Yangi natija!</b>\n\n"
-                     f"📝 Test: <code>{test.id}</code>\n"
+                     f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})\n"
                      f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"✅ Natija: {correct_count}/{total} ({percentage}%)",
                 parse_mode="HTML",
@@ -171,7 +171,7 @@ async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_
     if is_mixed and has_questions:
         await context.bot.send_message(
             chat_id,
-            f"📝 <b>Test: {code}</b>\n\n"
+            f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"Ikki usuldan birini tanlang:\n"
             f"• <b>🚀 Interaktiv yechish</b> — ilova (formulalar chiroyli ko'rinadi)\n"
@@ -183,7 +183,7 @@ async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_
     elif is_mixed:
         await context.bot.send_message(
             chat_id,
-            f"📝 <b>Test: {code}</b>\n\n"
+            f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"⚠️ Bu testda ochiq savollar bor — uni faqat ilova orqali yechish mumkin.\n"
             f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
@@ -194,7 +194,7 @@ async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_
     else:
         await context.bot.send_message(
             chat_id,
-            f"📝 <b>Test: {code}</b>\n\n"
+            f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"Javoblaringizni ikki usuldan birida kiriting:\n"
             f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
@@ -368,7 +368,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
     if is_mixed and has_questions:
         await update.message.reply_html(
-            f"📝 <b>Test: {code}</b>\n\n"
+            f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"Ikki usuldan birini tanlang:\n"
             f"• <b>🚀 Interaktiv yechish</b> — ilova (formulalar chiroyli ko'rinadi)\n"
@@ -378,7 +378,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         )
     elif is_mixed:
         await update.message.reply_html(
-            f"📝 <b>Test: {code}</b>\n\n"
+            f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"⚠️ Bu testda ochiq savollar bor — uni faqat ilova orqali yechish mumkin.\n"
             f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
@@ -387,7 +387,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         )
     else:
         await update.message.reply_html(
-            f"📝 <b>Test: {code}</b>\n\n"
+            f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
             f"❓ Savollar soni: {test.total_questions} ta\n\n"
             f"Javoblaringizni ikki usuldan birida kiriting:\n"
             f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
@@ -829,7 +829,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await context.bot.send_message(
                     chat_id=creator.telegram_id,
                     text=f"📢 <b>Yangi natija!</b>\n\n"
-                     f"📝 Test: <code>{test.id}</code>\n"
+                     f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})\n"
                      f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                      f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
                     parse_mode="HTML"
@@ -847,7 +847,7 @@ async def webapp_receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await context.bot.send_message(
                     chat_id=watcher_tg_id,
                     text=f"🔔 <b>Kuzatuv: Yangi natija!</b>\n\n"
-                         f"📝 Test: <code>{test.id}</code>\n"
+                         f"📝 Test: <b>{escape(test.name)}</b> (#{test.id})\n"
                          f"👤 Foydalanuvchi: {escape(db_user.full_name or db_user.username or '')}\n"
                          f"✅ Natija: {correct_count}/{total} ({submission.percentage}%)",
                     parse_mode="HTML"

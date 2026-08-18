@@ -41,15 +41,17 @@ def profile_menu_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-def test_created_keyboard(test_code: str, bot_username: str = "", total_questions: int = 0):
+def test_created_keyboard(test_code: str, bot_username: str = "", total_questions: int = 0, test_name: str = ""):
     """Test yaratilgandan keyin tugmalar"""
     from urllib.parse import quote
 
     deep_link = f"https://t.me/{bot_username}?start={test_code}" if bot_username else ""
 
+    name_line = f"📌 Nomi: {test_name}\n" if test_name else ""
     share_text = (
         f"🎯 Test Yechish Taklifi\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{name_line}"
         f"📝 Test kodi: {test_code}\n"
         f"❓ Savollar: {total_questions} ta\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -88,9 +90,12 @@ def my_tests_keyboard(tests):
     keyboard = []
     for test in tests[:10]:
         status = "🟢" if test.is_active else "🔴"
+        # Telegram InlineKeyboardButton matni 64 belgidan oshmasligi kerak —
+        # nom uzun bo'lsa qisqartiramiz, aks holda tugma yuborilmay xato beradi.
+        name = test.name if len(test.name) <= 30 else test.name[:29] + "…"
         keyboard.append([
             InlineKeyboardButton(
-                f"{status} {test.id} ({test.total_questions} savol)",
+                f"{status} {name} #{test.id} ({test.total_questions} savol)",
                 callback_data=f"test_{test.id}"
             )
         ])

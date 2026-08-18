@@ -67,6 +67,10 @@
         <h1 class="text-2xl font-extrabold text-center mb-1 tracking-tight">✍️ To'liq test</h1>
         <p class="text-center text-xs opacity-70 mb-4">Savol matni, variantlar va to'g'ri javobni kiriting</p>
 
+        <div id="name-banner" class="q-card mb-4 text-sm">
+            📌 Test nomi: <b id="name-banner-text">—</b>
+        </div>
+
         <div id="questions" class="space-y-4"></div>
 
         <button id="add-btn" class="w-full mt-4 py-3 rounded-xl font-bold border-2 border-dashed border-violet-400 text-violet-600 dark:text-violet-300 active:scale-95 transition">
@@ -95,6 +99,13 @@
 
         const LETTERS = ['a', 'b', 'c', 'd', 'e', 'f'];
         const MAX_QUESTIONS = 200;
+
+        // Test nomi bot suhbatida oldindan so'ralgan — URL query orqali keladi
+        const TEST_NAME = (new URLSearchParams(location.search).get('name') || '').trim();
+        document.getElementById('name-banner-text').textContent = TEST_NAME || '(nom topilmadi)';
+        if (!TEST_NAME) {
+            document.getElementById('name-banner').classList.add('text-red-500');
+        }
 
         function newQuestion() {
             return { type: 'closed', text: '', options: ['', '', '', ''], answer: '', has_image: false };
@@ -250,6 +261,7 @@
 
         function validate() {
             const errors = [];
+            if (!TEST_NAME) errors.push('Test nomi topilmadi — botga qaytib qaytadan urinib ko\'ring');
             questions.forEach((q, i) => {
                 const n = i + 1;
                 if (!q.text.trim()) errors.push(`${n}-savol matni bo'sh`);
@@ -318,7 +330,7 @@
                 const resp = await fetch('/api/test/create_rich', {
                     method: 'POST',
                     headers,
-                    body: JSON.stringify({ scoring_mode: 'simple', questions: buildPayload() }),
+                    body: JSON.stringify({ scoring_mode: 'simple', name: TEST_NAME, questions: buildPayload() }),
                 });
 
                 const data = await resp.json().catch(() => ({}));
