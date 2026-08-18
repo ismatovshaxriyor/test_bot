@@ -12,7 +12,7 @@ from utils import (
     calculate_rasch_scores,
     get_answer_review,
 )
-from export import export_to_excel, export_to_pdf, export_chart, get_grade
+from export import export_to_excel, export_to_pdf, export_chart, export_grade_chart, get_grade
 from config import ADMIN_ID
 from keyboards import (
     profile_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
@@ -561,6 +561,16 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     photo=f,
                     caption=f"📊 Test {code} — Tahlil grafigi"
                 )
+        elif fmt == 'gradechart':
+            filepath = export_grade_chart(stats, test)
+            if not filepath:
+                await query.message.reply_text("📭 Grafik uchun ishtirokchi ma'lumoti yetarli emas.")
+                return
+            with open(filepath, 'rb') as f:
+                await query.message.reply_photo(
+                    photo=f,
+                    caption=f"🏆 Test {code} — Baholar bo'yicha taqsimot"
+                )
     except Exception as e:
         await query.message.reply_text(f"❌ Fayl yaratishda xatolik: {str(e)}")
     finally:
@@ -583,7 +593,7 @@ def get_handlers():
         CallbackQueryHandler(stats_callback, pattern=r"^stats_"),
         CallbackQueryHandler(end_callback, pattern=r"^end_(?!confirm)"),
         CallbackQueryHandler(confirm_end_callback, pattern=r"^confirm_end_"),
-        CallbackQueryHandler(export_callback, pattern=r"^export_(excel|pdf|chart)_"),
+        CallbackQueryHandler(export_callback, pattern=r"^export_(excel|pdf|chart|gradechart)_"),
         CallbackQueryHandler(mytests_callback, pattern=r"^mytests$"),
         CallbackQueryHandler(test_detail_callback, pattern=r"^test_"),
     ]

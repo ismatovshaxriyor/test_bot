@@ -584,3 +584,67 @@ def export_chart(stats: Dict, test: Test) -> str:
     fig.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     return filepath
+
+
+def export_grade_chart(stats: Dict, test: Test) -> str:
+    """Ishtirokchilarning daraja (A+, A, B+, B, C+, C, NC) bo'yicha taqsimot grafigi.
+
+    Daraja `get_grade()` bo'yicha aniqlanadi: Rash rejimida `rasch_normalized`
+    balldan, oddiy rejimda foizdan (`percentage`) foydalaniladi.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    submissions = stats.get('submissions', [])
+    if not submissions:
+        return None
+
+    order = ['A+', 'A', 'B+', 'B', 'C+', 'C', 'NC']
+    bar_colors = {
+        'A+': '#1e8449', 'A': '#27ae60', 'B+': '#f1c40f', 'B': '#f39c12',
+        'C+': '#e67e22', 'C': '#d35400', 'NC': '#c0392b',
+    }
+
+    counts = {g: 0 for g in order}
+    for sub in submissions:
+        ball = sub.get('rasch_normalized', sub.get('percentage', 0))
+        grade = get_grade(ball)
+        counts['NC' if grade == '-' else grade] += 1
+
+    total = len(submissions)
+    values = [counts[g] for g in order]
+    colors = [bar_colors[g] for g in order]
+
+    fig, ax = plt.subplots(figsize=(9, 6.5))
+
+    bars = ax.bar(order, values, color=colors, edgecolor='white',
+                   linewidth=1, width=0.65, zorder=3)
+
+    max_val = max(values) if values else 0
+    for bar, val in zip(bars, values):
+        if val == 0:
+            continue
+        pct = val / total * 100
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_val * 0.02,
+                 f'{val}\n({pct:.0f}%)', ha='center', va='bottom',
+                 fontsize=9, fontweight='bold', color='#333')
+
+    ax.set_xlabel('Daraja', fontsize=12, fontweight='bold', labelpad=10)
+    ax.set_ylabel('Foydalanuvchilar soni', fontsize=12, fontweight='bold')
+    ax.set_ylim(0, max_val * 1.2 if max_val else 1)
+
+    ax.set_title(f"Test {test.id} — Baholar bo'yicha taqsimot ({total} ishtirokchi)",
+                 fontsize=14, fontweight='bold', pad=15)
+
+    ax.yaxis.grid(True, alpha=0.2, linestyle='-')
+    ax.set_axisbelow(True)
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+
+    plt.tight_layout()
+
+    filepath = os.path.join(tempfile.gettempdir(), f"gradechart_{test.id}.png")
+    fig.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    return filepath
