@@ -128,9 +128,10 @@ def back_to_test_keyboard(test_code: str):
             InlineKeyboardButton("📥 PDF", callback_data=f"export_pdf_{test_code}"),
         ],
         [
-            InlineKeyboardButton("📊 Savollar grafigi", callback_data=f"export_chart_{test_code}"),
-            InlineKeyboardButton("🏆 Baholar grafigi", callback_data=f"export_gradechart_{test_code}"),
+            InlineKeyboardButton("📊 Savollar (%)", callback_data=f"export_chart_{test_code}"),
+            InlineKeyboardButton("🔢 Savollar (son)", callback_data=f"export_countschart_{test_code}"),
         ],
+        [InlineKeyboardButton("🏆 Baholar grafigi", callback_data=f"export_gradechart_{test_code}")],
         [InlineKeyboardButton("🔙 Orqaga", callback_data=f"test_{test_code}")]
     ]
     return InlineKeyboardMarkup(keyboard)

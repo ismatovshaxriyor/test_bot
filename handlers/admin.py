@@ -1547,9 +1547,10 @@ async def _send_test_result(message, code: str) -> bool:
                 InlineKeyboardButton("📥 PDF", callback_data=f"export_pdf_{test.id}"),
             ],
             [
-                InlineKeyboardButton("📊 Savollar grafigi", callback_data=f"export_chart_{test.id}"),
-                InlineKeyboardButton("🏆 Baholar grafigi", callback_data=f"export_gradechart_{test.id}"),
+                InlineKeyboardButton("📊 Savollar (%)", callback_data=f"export_chart_{test.id}"),
+                InlineKeyboardButton("🔢 Savollar (son)", callback_data=f"export_countschart_{test.id}"),
             ],
+            [InlineKeyboardButton("🏆 Baholar grafigi", callback_data=f"export_gradechart_{test.id}")],
             [InlineKeyboardButton("🔙 Testlarga qaytish", callback_data="admin_tests")],
         ])
 

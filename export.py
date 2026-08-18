@@ -586,6 +586,93 @@ def export_chart(stats: Dict, test: Test) -> str:
     return filepath
 
 
+def export_question_counts_chart(stats: Dict, test: Test) -> str:
+    """Har bir savol bo'yicha to'g'ri javob bergan ishtirokchilar SONI (foiz emas).
+
+    Ranglash `export_chart()` bilan bir xil foiz zonalariga asoslanadi — faqat
+    ustun balandligi xom son, foiz emas — shuning uchun ikki grafik vizual
+    uslub jihatidan bir-biriga mos keladi.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    q_stats = stats.get('question_stats', [])
+    total_subs = stats.get('total_submissions', 0)
+    if not q_stats or not total_subs:
+        return None
+
+    total_q = len(q_stats)
+
+    width = max(10, min(20, total_q * 0.45))
+    fig, ax = plt.subplots(figsize=(width, 7))
+
+    questions = [f"{qs['index']}" for qs in q_stats]
+    counts = [qs['correct_count'] for qs in q_stats]
+    percentages = [qs['percentage'] for qs in q_stats]
+
+    colors = []
+    for p in percentages:
+        if p >= 80:
+            colors.append('#27ae60')  # Yashil — oson
+        elif p >= 60:
+            colors.append('#f39c12')  # Sariq — o'rtacha
+        elif p >= 40:
+            colors.append('#e67e22')  # To'q sariq — qiyinroq
+        else:
+            colors.append('#c0392b')  # Qizil — qiyin
+
+    bars = ax.bar(range(total_q), counts, color=colors,
+                   edgecolor='white', linewidth=0.8, width=0.75, zorder=3)
+
+    max_count = max(counts) if counts else 0
+    for bar, cnt in zip(bars, counts):
+        ax.text(bar.get_x() + bar.get_width() / 2., bar.get_height() + max_count * 0.012,
+                str(cnt), ha='center', va='bottom',
+                fontsize=7 if total_q > 30 else 8.5, fontweight='bold', color='#333')
+
+    # Jami ishtirokchilar chizig'i — har bir ustun shu chegaraga nisbatan qanchaligini ko'rsatadi
+    ax.axhline(y=total_subs, color='#3498db', linestyle='--', alpha=0.6, linewidth=1.3, zorder=2)
+    ax.text(total_q - 0.5, total_subs + max_count * 0.015,
+            f"Jami ishtirokchilar: {total_subs}", fontsize=9, color='#3498db',
+            fontweight='bold', ha='right')
+
+    ax.set_xticks(range(total_q))
+    ax.set_xticklabels(questions, fontsize=7 if total_q > 30 else 9)
+    if total_q > 25:
+        plt.xticks(rotation=45, ha='right')
+
+    ax.set_xlabel('Savol raqami', fontsize=12, fontweight='bold', labelpad=10)
+    ax.set_ylabel("To'g'ri javoblar soni", fontsize=12, fontweight='bold')
+    ax.set_ylim(0, max(total_subs, max_count) * 1.14)
+    ax.set_xlim(-0.5, total_q - 0.5)
+
+    ax.yaxis.grid(True, alpha=0.2, linestyle='-')
+    ax.set_axisbelow(True)
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+
+    ax.set_title(f"Test {test.id} — Har bir savol bo'yicha to'g'ri javoblar soni",
+                 fontsize=15, fontweight='bold', pad=15)
+
+    legend_elements = [
+        Patch(facecolor='#27ae60', label='Oson (80%+)'),
+        Patch(facecolor='#f39c12', label="O'rtacha (60-80%)"),
+        Patch(facecolor='#e67e22', label='Qiyinroq (40-60%)'),
+        Patch(facecolor='#c0392b', label='Qiyin (<40%)'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=9,
+              framealpha=0.9, edgecolor='#ccc')
+
+    plt.tight_layout()
+
+    filepath = os.path.join(tempfile.gettempdir(), f"countschart_{test.id}.png")
+    fig.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    return filepath
+
+
 def export_grade_chart(stats: Dict, test: Test) -> str:
     """Ishtirokchilarning daraja (A+, A, B+, B, C+, C, NC) bo'yicha taqsimot grafigi.
 
