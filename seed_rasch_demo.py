@@ -230,7 +230,6 @@ def print_summary(test: Test):
     print(f"   Savollar: {test.total_questions}")
     print(f"   Ishtirokchilar: {len(submissions)}")
     print(f"   Rash hisoblash mavjud: {rasch.get('rasch_available', False)}")
-    print(f"   Konvergentsiya: {rasch.get('rasch_converged', False)}")
 
     print("\nTop-10 natija (Rash):")
     for row in rasch.get("user_scores", [])[:10]:

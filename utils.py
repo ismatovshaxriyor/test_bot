@@ -490,185 +490,57 @@ def _sigmoid(x: float) -> float:
     return z / (1.0 + z)
 
 
-def _leave_one_out_esf(eps: List[float], j: int) -> List[float]:
+def _fit_rasch_prox(response_matrix: List[List[int]]) -> tuple[List[float], List[float]]:
     """
-    gamma^(-j)_0..gamma^(-j)_{L-1} — item'lar orasidan j-item chiqarib
-    tashlangan elementar simmetrik funksiyalar (ESF; Rash CMLE'ning asosi).
+    Dichotomous Rash (1PL) item qiyinligi va person qobiliyatini PROX (normal
+    approksimatsiya) usuli bilan baholaydi (Cohen, 1979; Wright & Stone) —
+    zamonaviy Rash dasturlarida (Winsteps va h.k.) iterativ CMLE/JMLE'ning
+    boshlang'ich nuqtasi sifatida ishlatiladigan, sinovdan o'tgan klassik usul.
 
-    gamma^(-j)_r = qolgan L-1 ta item'dan r tasini tanlab olingan barcha kichik
-    to'plamlar bo'yicha epsilon_k (item "osonlik"i, exp(-beta_k)) ko'paytmalari
-    yig'indisi. To'liq ESF'dan orqaga qarab ayirib chiqarish (backward
-    elimination) katta qiymatlarda raqamli beqarorlikka (catastrophic
-    cancellation) olib keladi — shu sababli L-1 ta qolgan item ustida forward
-    rekursiya to'g'ridan-to'g'ri qayta ishga tushiriladi. Faqat
-    qo'shish/ko'paytirishdan iborat (ayirish yo'q), shu bois har doim barqaror.
-    """
-    gamma = [1.0]
-    for k, e in enumerate(eps):
-        if k == j:
-            continue
-        new_gamma = [0.0] * (len(gamma) + 1)
-        for r in range(len(new_gamma)):
-            left = gamma[r] if r < len(gamma) else 0.0
-            diag = gamma[r - 1] if 0 <= r - 1 < len(gamma) else 0.0
-            new_gamma[r] = left + e * diag
-        gamma = new_gamma
-    return gamma
-
-
-def _fit_rasch_cmle(
-    response_matrix: List[List[int]],
-    max_iter: int = 200,
-    tol: float = 1e-5,
-) -> tuple[List[float], bool]:
-    """
-    Dichotomous Rash (1PL) item qiyinliklarini Conditional Maximum Likelihood
-    (CMLE) bilan baholaydi — bu "aynan Rash usuli" deb ataladigan, shaxs
-    qobiliyat parametrlarini modeldan butunlay chiqarib tashlab (raw ball —
-    yetarli statistika — ustidan shartlanib) item qiyinligini hisoblaydigan
-    yagona usul. Natijada item baholari kalibrlash namunasidagi kishilarning
-    qobiliyat taqsimotidan mustaqil bo'ladi ("specific objectivity") va JMLE'ga
-    xos tizimli siljish (bias) butunlay yo'qoladi — taxminiy tuzatish shart emas.
+    To'liq CMLE (Newton-Raphson + elementar simmetrik funksiyalar) o'rniga har
+    bir item/person uchun log-odds (logit) ni bir martalik yopiq formula bilan
+    hisoblaydi, so'ng ikkalasini bir-birining tarqalishiga (variansiyasiga)
+    qarab kengaytirish koeffitsienti bilan tuzatadi — iteratsiyasiz. Natija
+    haqiqiy Rash bahosiga yaqin bo'ladi, lekin CMLE kadar aniq emas: ayniqsa
+    ekstremal ballarda va kichik namunalarda biroz farq qilishi mumkin.
 
     Returns:
-        (item_difficulties, converged)
+        (item_difficulties, person_abilities) — item_difficulties o'rtachasi
+        0 ga markazlashtirilgan.
     """
     num_persons = len(response_matrix)
     num_items = len(response_matrix[0]) if num_persons else 0
     if num_persons == 0 or num_items < 2:
-        return [], False
-
-    raw_scores = [sum(row) for row in response_matrix]
-    n_r = [0] * (num_items + 1)
-    for r in raw_scores:
-        n_r[r] += 1
+        return [], []
 
     s_j = [sum(response_matrix[i][j] for i in range(num_persons)) for j in range(num_items)]
+    raw_scores = [sum(row) for row in response_matrix]
 
-    # Boshlang'ich qiymatlar — oddiy log-odds (iteratsiya tezroq yaqinlashishi uchun)
-    betas: List[float] = []
-    for j in range(num_items):
-        p = (s_j[j] + 0.5) / (num_persons + 1.0)
-        betas.append(-math.log(p / (1.0 - p)))
+    # Logitlar: ekstremal (hammasi to'g'ri/noto'g'ri) ballarga 0.5 uzluksizlik
+    # tuzatishi qo'llanadi — aks holda ln(0) yoki ln(cheksizlik) chiqib qoladi.
+    item_logits = [math.log((num_persons - s + 0.5) / (s + 0.5)) for s in s_j]
+    person_logits = [math.log((r + 0.5) / (num_items - r + 0.5)) for r in raw_scores]
+
+    def _variance(values: List[float]) -> float:
+        n = len(values)
+        if n < 2:
+            return 0.0
+        mean = sum(values) / n
+        return sum((v - mean) ** 2 for v in values) / (n - 1)
+
+    # Kengaytirish koeffitsientlari: item logitning "cho'zilishi" personlar
+    # qobiliyatining tarqalishiga bog'liq va aksincha — 2.89 (=1.7^2) logistik
+    # va normal ogive modellarini bir-biriga mos keltiruvchi klassik konstanta.
+    item_expansion = math.sqrt(1.0 + _variance(person_logits) / 2.89)
+    person_expansion = math.sqrt(1.0 + _variance(item_logits) / 2.89)
+
+    betas = [item_expansion * logit for logit in item_logits]
+    thetas = [person_expansion * logit for logit in person_logits]
+
     center = sum(betas) / num_items
     betas = [b - center for b in betas]
 
-    converged = False
-
-    # Ketma-ket (Gauss-Seidel uslubidagi) Newton-Raphson yangilanish: har item
-    # o'zgargandan so'ng darhol ESF qayta hisoblanadi. Oddiy fixed-point
-    # almashtirish (eps_j = s_j/denom) juda sekin yaqinlashishi (yuzlab
-    # iteratsiya, katta testlarda hatto yetarli bo'lmasligi) aniqlandi — shu
-    # sababli aniq ikkinchi hosila (Fisher axboroti) bilan Newton qadami
-    # ishlatiladi, bu bir necha barobar tezroq yaqinlashadi.
-    for _ in range(max_iter):
-        max_change = 0.0
-
-        for j in range(num_items):
-            # Hamma yoki hech kim yechmagan item — CMLE bu holatda aniqlanmaydi
-            # (nol variatsiya = ma'lumot yo'q), eski qiymat saqlanadi.
-            if s_j[j] <= 0 or s_j[j] >= num_persons:
-                continue
-
-            eps = [math.exp(-b) for b in betas]
-            gamma_loo = _leave_one_out_esf(eps, j)
-            e_j = eps[j]
-            # gamma_full ni gamma_loo'dan qo'shish orqali (ayirishsiz, barqaror) chiqarish
-            gamma_full = [0.0] * (len(gamma_loo) + 1)
-            for r in range(len(gamma_full)):
-                left = gamma_loo[r] if r < len(gamma_loo) else 0.0
-                diag = gamma_loo[r - 1] if 0 <= r - 1 < len(gamma_loo) else 0.0
-                gamma_full[r] = left + e_j * diag
-
-            # pi_rj = P(x_j=1 | raw ball=r) — item j ning kutilgan (model) ulushi
-            expected = 0.0
-            info = 0.0
-            for r in range(1, num_items + 1):
-                if n_r[r] == 0:
-                    continue
-                pi_rj = e_j * gamma_loo[r - 1] / gamma_full[r]
-                expected += n_r[r] * pi_rj
-                info += n_r[r] * pi_rj * (1.0 - pi_rj)
-
-            if info <= 1e-9:
-                continue
-
-            delta = max(min((expected - s_j[j]) / info, 2.0), -2.0)
-            new_beta_j = max(min(betas[j] + delta, 8.0), -8.0)
-            max_change = max(max_change, abs(new_beta_j - betas[j]))
-            betas[j] = new_beta_j
-
-        # Identifiability: item qiyinliklar o'rtachasi 0 bo'lsin
-        center = sum(betas) / num_items
-        betas = [b - center for b in betas]
-
-        if max_change < tol:
-            converged = True
-            break
-
-    return betas, converged
-
-
-def _estimate_person_wle(
-    response_matrix: List[List[int]],
-    betas: List[float],
-    max_iter: int = 100,
-    tol: float = 1e-5,
-) -> List[float]:
-    """
-    Item qiyinliklari (CMLE bilan aniqlangan) asosida har bir ishtirokchining
-    qobiliyatini Warm (1989) Weighted Likelihood Estimation (WLE) bilan hisoblaydi.
-
-    Oddiy MLE qisqa testlarda tizimli siljishga ega (va 0/100% natijalarda
-    cheksizlikka intiladi); WLE bu siljishni Fisher axboroti orqali aniq
-    formula bilan tuzatadi va hatto eng past/eng yuqori xom balda ham chekli
-    (finite) baho beradi — qo'lda ±chegara qo'yish shart emas.
-
-    Score tenglamasi: U(theta) + I'(theta) / (2*I(theta)) = 0
-        U(theta)  = sum(x_j - P_j)                    — odatiy MLE score
-        I(theta)  = sum(P_j*Q_j)                       — test axboroti
-        I'(theta) = sum(P_j*Q_j*(1-2*P_j))              — I ning hosilasi
-        I''(theta)= sum(P_j*Q_j*(1-6*P_j*Q_j))          — Newton qadami uchun
-    """
-    num_items = len(betas)
-    thetas = []
-
-    for row in response_matrix:
-        raw = sum(row)
-        p0 = (raw + 0.5) / (num_items + 1.0)
-        theta = math.log(p0 / (1.0 - p0))
-
-        for _ in range(max_iter):
-            score = 0.0
-            info = 0.0
-            info_deriv = 0.0
-            info_deriv2 = 0.0
-            for j in range(num_items):
-                p = _sigmoid(theta - betas[j])
-                w = p * (1.0 - p)
-                score += (row[j] - p)
-                info += w
-                info_deriv += w * (1.0 - 2.0 * p)
-                info_deriv2 += w * (1.0 - 6.0 * w)
-
-            if info < 1e-9:
-                break
-
-            g = score + info_deriv / (2.0 * info)
-            g_prime = -info + (info_deriv2 * info - info_deriv ** 2) / (2.0 * info * info)
-            if abs(g_prime) < 1e-9:
-                break
-
-            delta = max(min(g / g_prime, 1.0), -1.0)
-            new_theta = max(min(theta - delta, 8.0), -8.0)
-            change = abs(new_theta - theta)
-            theta = new_theta
-            if change < tol:
-                break
-
-        thetas.append(theta)
-
-    return thetas
+    return betas, thetas
 
 
 def _rasch_fit_stats(
@@ -846,14 +718,8 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     if total_questions == 0:
         return empty_result
 
-    item_difficulties, converged = _fit_rasch_cmle(response_matrix)
-    if not item_difficulties:
-        return empty_result
-
-    # Item qiyinliklari CMLE bilan (xolisona) aniqlangach, har bir ishtirokchining
-    # qobiliyati shu qiyinliklarga nisbatan WLE bilan hisoblanadi.
-    person_thetas = _estimate_person_wle(response_matrix, item_difficulties)
-    if not person_thetas:
+    item_difficulties, person_thetas = _fit_rasch_prox(response_matrix)
+    if not item_difficulties or not person_thetas:
         return empty_result
 
     fit = _rasch_fit_stats(response_matrix, person_thetas, item_difficulties)
@@ -947,7 +813,6 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         'question_misfit': question_misfit,
         'person_reliability': person_reliability,
         'item_reliability': item_reliability,
-        'rasch_converged': converged,
         'user_scores': user_scores
     }
 
@@ -1144,8 +1009,6 @@ def format_stats(stats: Dict, test: Test) -> str:
             text += f"📈 Ishtirokchilarni ajratish ishonchliligi: {person_rel:.2f}\n"
         if item_rel is not None:
             text += f"📈 Savollarni ajratish ishonchliligi: {item_rel:.2f}\n"
-        if not rasch.get('rasch_converged', True):
-            text += "⚠️ Hisoblash to'liq yaqinlashmadi — natijalar taxminiy bo'lishi mumkin.\n"
 
         misfit_persons = sum(1 for row in rasch.get('user_scores', []) if row.get('misfit'))
         misfit_items = sum(1 for qs in stats.get('question_stats', []) if qs.get('misfit'))
