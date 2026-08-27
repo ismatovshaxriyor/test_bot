@@ -490,28 +490,34 @@ def _sigmoid(x: float) -> float:
     return z / (1.0 + z)
 
 
-def _fit_rasch_prox(response_matrix: List[List[int]]) -> tuple[List[float], List[float]]:
+def _fit_rasch_prox(response_matrix: List[List[int]]) -> List[float]:
     """
-    Dichotomous Rash (1PL) item qiyinligi va person qobiliyatini PROX (normal
-    approksimatsiya) usuli bilan baholaydi (Cohen, 1979; Wright & Stone) —
-    zamonaviy Rash dasturlarida (Winsteps va h.k.) iterativ CMLE/JMLE'ning
-    boshlang'ich nuqtasi sifatida ishlatiladigan, sinovdan o'tgan klassik usul.
+    Rash (1PL) item qiyinligini PROX (normal approksimatsiya) usuli bilan
+    baholaydi (Cohen, 1979; Wright & Stone) — zamonaviy Rash dasturlarida
+    (Winsteps va h.k.) iterativ CMLE'ning boshlang'ich nuqtasi sifatida
+    ishlatiladigan, sinovdan o'tgan klassik usul.
 
-    To'liq CMLE (Newton-Raphson + elementar simmetrik funksiyalar) o'rniga har
-    bir item/person uchun log-odds (logit) ni bir martalik yopiq formula bilan
-    hisoblaydi, so'ng ikkalasini bir-birining tarqalishiga (variansiyasiga)
-    qarab kengaytirish koeffitsienti bilan tuzatadi — iteratsiyasiz. Natija
-    haqiqiy Rash bahosiga yaqin bo'ladi, lekin CMLE kadar aniq emas: ayniqsa
-    ekstremal ballarda va kichik namunalarda biroz farq qilishi mumkin.
+    To'liq CMLE (Newton-Raphson + elementar simmetrik funksiyalar, item soni
+    bo'yicha kvadratik og'ir hisoblash) o'rniga item logitini (ln(noto'g'ri/
+    to'g'ri nisbat)) bir martalik yopiq formula bilan hisoblaydi, so'ng
+    personlar qobiliyatining tarqalishiga (variansiyasiga) qarab kengaytirish
+    koeffitsienti bilan tuzatadi — iteratsiyasiz.
+
+    MUHIM: person qobiliyati BU YERDA hisoblanmaydi — u alohida
+    `_estimate_person_wle` bilan shu item qiyinliklariga nisbatan aniq
+    Newton-Raphson orqali topiladi. Sabab: har bir ishtirokchining "kutilgan
+    foizi" xom to'g'ri javob foiziga mos kelishi (aks holda ballar tizimli
+    siljib qoladi) faqat shu tenglamani yechish orqali kafolatlanadi — item
+    qiyinligini esa bunday aniqlik bilan hisoblash shart emas, chunki u faqat
+    nisbiy qiyinlik tartibi va misfit tekshiruvi uchun ishlatiladi.
 
     Returns:
-        (item_difficulties, person_abilities) — item_difficulties o'rtachasi
-        0 ga markazlashtirilgan.
+        item_difficulties — o'rtachasi 0 ga markazlashtirilgan.
     """
     num_persons = len(response_matrix)
     num_items = len(response_matrix[0]) if num_persons else 0
     if num_persons == 0 or num_items < 2:
-        return [], []
+        return []
 
     s_j = [sum(response_matrix[i][j] for i in range(num_persons)) for j in range(num_items)]
     raw_scores = [sum(row) for row in response_matrix]
@@ -528,19 +534,85 @@ def _fit_rasch_prox(response_matrix: List[List[int]]) -> tuple[List[float], List
         mean = sum(values) / n
         return sum((v - mean) ** 2 for v in values) / (n - 1)
 
-    # Kengaytirish koeffitsientlari: item logitning "cho'zilishi" personlar
-    # qobiliyatining tarqalishiga bog'liq va aksincha — 2.89 (=1.7^2) logistik
-    # va normal ogive modellarini bir-biriga mos keltiruvchi klassik konstanta.
+    # Kengaytirish koeffitsienti: item logitning "cho'zilishi" personlar
+    # qobiliyatining tarqalishiga bog'liq — 2.89 (=1.7^2) logistik va normal
+    # ogive modellarini bir-biriga mos keltiruvchi klassik konstanta.
     item_expansion = math.sqrt(1.0 + _variance(person_logits) / 2.89)
-    person_expansion = math.sqrt(1.0 + _variance(item_logits) / 2.89)
 
     betas = [item_expansion * logit for logit in item_logits]
-    thetas = [person_expansion * logit for logit in person_logits]
 
     center = sum(betas) / num_items
     betas = [b - center for b in betas]
 
-    return betas, thetas
+    return betas
+
+
+def _estimate_person_wle(
+    response_matrix: List[List[int]],
+    betas: List[float],
+    max_iter: int = 100,
+    tol: float = 1e-5,
+) -> List[float]:
+    """
+    Item qiyinliklari asosida har bir ishtirokchining qobiliyatini Warm (1989)
+    Weighted Likelihood Estimation (WLE) bilan hisoblaydi.
+
+    Oddiy MLE qisqa testlarda tizimli siljishga ega (va 0/100% natijalarda
+    cheksizlikka intiladi); WLE bu siljishni Fisher axboroti orqali aniq
+    formula bilan tuzatadi va hatto eng past/eng yuqori xom balda ham chekli
+    (finite) baho beradi — qo'lda ±chegara qo'yish shart emas.
+
+    Bu qadam item qiyinligi qanday hisoblanganidan (CMLE yoki PROX) qat'i
+    nazar har bir kishining "kutilgan foizi" (sum sigmoid(theta-beta)) xom
+    to'g'ri javob foiziga mos kelishini kafolatlaydi — shuning uchun item
+    tomoni soddalashtirilgan bo'lsa ham, ko'rsatiladigan ballar tizimli
+    siljib qolmaydi.
+
+    Score tenglamasi: U(theta) + I'(theta) / (2*I(theta)) = 0
+        U(theta)  = sum(x_j - P_j)                    — odatiy MLE score
+        I(theta)  = sum(P_j*Q_j)                       — test axboroti
+        I'(theta) = sum(P_j*Q_j*(1-2*P_j))              — I ning hosilasi
+        I''(theta)= sum(P_j*Q_j*(1-6*P_j*Q_j))          — Newton qadami uchun
+    """
+    num_items = len(betas)
+    thetas = []
+
+    for row in response_matrix:
+        raw = sum(row)
+        p0 = (raw + 0.5) / (num_items + 1.0)
+        theta = math.log(p0 / (1.0 - p0))
+
+        for _ in range(max_iter):
+            score = 0.0
+            info = 0.0
+            info_deriv = 0.0
+            info_deriv2 = 0.0
+            for j in range(num_items):
+                p = _sigmoid(theta - betas[j])
+                w = p * (1.0 - p)
+                score += (row[j] - p)
+                info += w
+                info_deriv += w * (1.0 - 2.0 * p)
+                info_deriv2 += w * (1.0 - 6.0 * w)
+
+            if info < 1e-9:
+                break
+
+            g = score + info_deriv / (2.0 * info)
+            g_prime = -info + (info_deriv2 * info - info_deriv ** 2) / (2.0 * info * info)
+            if abs(g_prime) < 1e-9:
+                break
+
+            delta = max(min(g / g_prime, 1.0), -1.0)
+            new_theta = max(min(theta - delta, 8.0), -8.0)
+            change = abs(new_theta - theta)
+            theta = new_theta
+            if change < tol:
+                break
+
+        thetas.append(theta)
+
+    return thetas
 
 
 def _rasch_fit_stats(
@@ -718,8 +790,12 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
     if total_questions == 0:
         return empty_result
 
-    item_difficulties, person_thetas = _fit_rasch_prox(response_matrix)
-    if not item_difficulties or not person_thetas:
+    item_difficulties = _fit_rasch_prox(response_matrix)
+    if not item_difficulties:
+        return empty_result
+
+    person_thetas = _estimate_person_wle(response_matrix, item_difficulties)
+    if not person_thetas:
         return empty_result
 
     fit = _rasch_fit_stats(response_matrix, person_thetas, item_difficulties)
