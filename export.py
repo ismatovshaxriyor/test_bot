@@ -4,7 +4,9 @@ import re
 import tempfile
 from typing import Dict
 from database import Test
-from utils import RASCH_MAX_SCORE, get_rasch_grade
+# get_grade shkala egasi bo'lgan utils'da yashaydi; bu yerdan ham import qilinadi,
+# shunda `from export import get_grade` ishlatayotgan joylar buzilmaydi.
+from utils import RASCH_MAX_SCORE, get_grade  # noqa: F401
 
 # XML/HTML da ruxsat etilmagan control belgilar (tab/newline'dan tashqari)
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -19,27 +21,6 @@ def _clean_text(value) -> str:
 
 
 
-
-def get_grade(score: float) -> str:
-    """FOIZ shkalasi (0..100) bo'yicha daraja — oddiy testlar uchun.
-
-    Rash testda ball 0..91 shkalasida bo'ladi va boshqa chegaralar qo'llanadi —
-    u yerda `utils.get_rasch_grade()` ishlatiladi.
-    """
-    if score >= 70:
-        return "A+"
-    elif score >= 65:
-        return "A"
-    elif score >= 60:
-        return "B+"
-    elif score >= 55:
-        return "B"
-    elif score >= 50:
-        return "C+"
-    elif score >= 46:
-        return "C"
-    else:
-        return "-"
 
 def export_to_excel(stats: Dict, test: Test) -> str:
     """Natijalarni Excel faylga yozish"""
@@ -123,7 +104,7 @@ def export_to_excel(stats: Dict, test: Test) -> str:
         ws.cell(row=r, column=2, value=_clean_text(sub['user'])).border = thin_border
 
         if rasch_mode:
-            grade = sub.get('grade') or get_rasch_grade(ball)
+            grade = sub.get('grade') or get_grade(ball)
             f1_val = sub.get('fan1_score', '-')
             f2_val = sub.get('fan2_score', '-')
             if grade == "-":
@@ -388,7 +369,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
         name = _clean_text(sub['user']) or "—"
         if rasch_mode:
             ball_num = sub.get('rasch_normalized', sub['percentage'])
-            grade = sub.get('grade') or get_rasch_grade(ball_num)
+            grade = sub.get('grade') or get_grade(ball_num)
 
             f1 = sub.get('fan1_score', '-')
             f2 = sub.get('fan2_score', '-')
@@ -458,7 +439,7 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     if rasch_mode:
         for i, sub in enumerate(stats['submissions'], 1):
             ball_num = sub.get('rasch_normalized', sub['percentage'])
-            grade = sub.get('grade') or get_rasch_grade(ball_num)
+            grade = sub.get('grade') or get_grade(ball_num)
             bg = grade_bg_colors.get(grade)
             if bg:
                 style_commands.append(("BACKGROUND", (0, i), (-1, i), bg))
@@ -474,8 +455,8 @@ def export_to_pdf(stats: Dict, test: Test) -> str:
     if rasch_mode:
         elems.append(Paragraph(
             f"<b>Daraja shkalasi</b> (maksimal ball {RASCH_MAX_SCORE:.0f}): "
-            "78.6+ → A+ · 68.7–78.5 → A · 58.7–68.6 → B+ · "
-            "48.8–58.6 → B · 35.6–48.7 → C+ · 24.0–35.5 → C",
+            "70+ → A+ · 65–69.9 → A · 60–64.9 → B+ · "
+            "55–59.9 → B · 50–54.9 → C+ · 46–49.9 → C",
             grade_note_style,
         ))
 
@@ -687,8 +668,8 @@ def export_question_counts_chart(stats: Dict, test: Test) -> str:
 def export_grade_chart(stats: Dict, test: Test) -> str:
     """Ishtirokchilarning daraja (A+, A, B+, B, C+, C, NC) bo'yicha taqsimot grafigi.
 
-    Rash rejimida daraja 0..91 ball shkalasida (`get_rasch_grade`), oddiy rejimda
-    esa foiz shkalasida (`get_grade`) aniqlanadi — ikkalasining chegaralari har xil.
+    Daraja `get_grade()` bo'yicha aniqlanadi: Rash rejimida `rasch_normalized`
+    balldan (0..91), oddiy rejimda foizdan (`percentage`) foydalaniladi.
     """
     import matplotlib
     matplotlib.use('Agg')
@@ -704,14 +685,10 @@ def export_grade_chart(stats: Dict, test: Test) -> str:
         'C+': '#e67e22', 'C': '#d35400', 'NC': '#c0392b',
     }
 
-    rasch_mode = test.scoring_mode == "rasch"
     counts = {g: 0 for g in order}
     for sub in submissions:
-        if rasch_mode:
-            ball = sub.get('rasch_normalized', sub.get('percentage', 0))
-            grade = sub.get('grade') or get_rasch_grade(ball)
-        else:
-            grade = get_grade(sub.get('percentage', 0))
+        ball = sub.get('rasch_normalized', sub.get('percentage', 0))
+        grade = sub.get('grade') or get_grade(ball)
         counts['NC' if grade == '-' else grade] += 1
 
     total = len(submissions)

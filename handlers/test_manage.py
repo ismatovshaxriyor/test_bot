@@ -13,7 +13,7 @@ from utils import (
     format_stats_simple,
     calculate_rasch_scores,
     get_answer_review,
-    get_rasch_grade,
+    get_grade,
     rasch_score_from_proportion,
 )
 from export import (
@@ -100,11 +100,11 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
             row = rasch_scores_by_user.get(user_id)
             if row:
                 rounded_score = round(row["score"], 1)
-                grade = row.get("grade") or get_rasch_grade(rounded_score)
+                grade = row.get("grade") or get_grade(rounded_score)
             else:
                 # Rash natijasi topilmadi — xom foizni ball shkalasiga o'tkazamiz
                 rounded_score = rasch_score_from_proportion(float(submission.percentage) / 100.0)
-                grade = get_rasch_grade(rounded_score)
+                grade = get_grade(rounded_score)
             se_part = f" ± {row['se']}" if row and row.get("se") is not None else ""
             result_line = (
                 f"📐 <b>Natijangiz:</b> {rounded_score}{se_part} ball "

@@ -504,38 +504,68 @@ def get_answer_review(correct: str, submitted: str) -> List[Dict]:
 # ============ RASCH MODEL ============
 
 # Ko'rsatiladigan "umumiy ball" 0..91 oralig'ida bo'ladi. 91 — erishib bo'lmaydigan
-# yuqori chegara (asimptota): ball = 91 × kutilgan to'g'ri javob ulushi, ulush esa
-# sigmoidlar o'rtachasi bo'lgani uchun matematik jihatdan 1 ga hech qachon teng
-# bo'lmaydi. Qo'shimcha shift (_RASCH_SCORE_CEILING) yaxlitlashdan keyin ham
-# ballning 91 ga chiqib ketishiga yo'l qo'ymaydi.
+# yuqori chegara: konversiya jadvalining oxirgi tuguni ulush = 1.0 da turadi, ulush esa
+# sigmoidlar o'rtachasi bo'lgani uchun 1 ga hech qachon teng bo'lmaydi. Qo'shimcha shift
+# (_RASCH_SCORE_CEILING) yaxlitlashdan keyin ham ballning 91 ga chiqishiga yo'l qo'ymaydi.
 RASCH_MAX_SCORE = 91.0
 _RASCH_SCORE_CEILING = RASCH_MAX_SCORE - 0.01
 
-# Daraja chegaralari 0..91 shkalada. Ular 55 bandli standart Rash testdagi maqsadli
-# to'g'ri javob soniga qarab tanlangan: chegara = 91 × (soni − 0.5) / 55, ya'ni ikki
-# qo'shni natija ORASIGA qo'yilgan. Aynan chegaraga emas, o'rtasiga qo'yilishining
-# sababi — Rash bali xom foizga faqat TAXMINAN teng (WLE baholashda natijalar
-# o'rtachaga bir oz siqiladi), shuning uchun aniq nuqtaga qo'yilgan chegara
-# maqsadli natijani bir pog'ona pastga tushirib yuborardi.
-RASCH_GRADE_THRESHOLDS = (
-    (78.6, "A+"),   # 48 ta va undan yuqori
-    (68.7, "A"),    # 42 ta
-    (58.7, "B+"),   # 36 ta
-    (48.8, "B"),    # 30 ta
-    (35.6, "C+"),   # 22 ta
-    (24.0, "C"),    # 15 ta — eng past o'tish darajasi
+# Daraja chegaralari — 46 → C, 50 → C+, 55 → B, 60 → B+, 65 → A, 70 → A+.
+GRADE_THRESHOLDS = (
+    (70.0, "A+"),
+    (65.0, "A"),
+    (60.0, "B+"),
+    (55.0, "B"),
+    (50.0, "C+"),
+    (46.0, "C"),
+)
+
+# Xom natija → ball konversiya jadvali (raw-to-scale), real imtihonlardagi kabi.
+# Kirish — kutilgan to'g'ri javob ULUSHI (0..1), shuning uchun jadval test uzunligidan
+# qat'i nazar ishlaydi. Tugunlar 55 bandli standart Rash testda daraja chegaralari
+# aynan kerakli to'g'ri javob soniga tushishi uchun tanlangan:
+#     15 ta → 46 (C) · 22 → 50 (C+) · 30 → 55 (B) · 36 → 60 (B+) · 42 → 65 (A) · 48 → 70 (A+)
+# Tugun aynan (n / 55) da emas, ((n - 0.5) / 55) da turadi — ya'ni n va n-1 natijalar
+# ORASIDA. Sababi: Rash bali xom foizga faqat TAXMINAN teng (WLE baholashda natijalar
+# o'rtachaga bir oz siqiladi), shuning uchun aniq nuqtaga qo'yilgan tugun maqsadli
+# natijani bir pog'ona pastga tushirib yuborardi.
+# Oxirgi tugun (ulush 1.0 → 91) — asimptota, unga hech qachon yetilmaydi.
+RASCH_SCALE_POINTS = (
+    (0.0, 0.0),
+    (14.5 / 55, 46.0),
+    (21.5 / 55, 50.0),
+    (29.5 / 55, 55.0),
+    (35.5 / 55, 60.0),
+    (41.5 / 55, 65.0),
+    (47.5 / 55, 70.0),
+    (1.0, RASCH_MAX_SCORE),
 )
 
 
 def rasch_score_from_proportion(proportion: float) -> float:
-    """Kutilgan to'g'ri javob ulushini (0..1) 0..91 ballga aylantiradi."""
-    return round(min(proportion * RASCH_MAX_SCORE, _RASCH_SCORE_CEILING), 2)
+    """Kutilgan to'g'ri javob ulushini (0..1) 0..91 ballga aylantiradi.
+
+    RASCH_SCALE_POINTS tugunlari orasida chiziqli interpolatsiya. Natija har doim
+    91 dan qat'iy kichik.
+    """
+    p = max(0.0, min(1.0, proportion))
+    score = RASCH_MAX_SCORE
+    for (p0, s0), (p1, s1) in zip(RASCH_SCALE_POINTS, RASCH_SCALE_POINTS[1:]):
+        if p <= p1:
+            span = p1 - p0
+            score = s1 if span <= 1e-12 else s0 + (s1 - s0) * (p - p0) / span
+            break
+    return round(min(score, _RASCH_SCORE_CEILING), 2)
 
 
-def get_rasch_grade(ball: float) -> str:
-    """Rash bali (0..91) bo'yicha daraja. Chegaradan pastda '-' (o'tmagan)."""
-    for threshold, grade in RASCH_GRADE_THRESHOLDS:
-        if ball >= threshold:
+def get_grade(score: float) -> str:
+    """Ballni daraja (grade) ga aylantirish. Chegaradan pastda '-' (o'tmagan).
+
+    Rash testda 0..91 ballga, oddiy testda 0..100 foizga qo'llanadi — ikkalasida
+    ham chegaralar bir xil.
+    """
+    for threshold, grade in GRADE_THRESHOLDS:
+        if score >= threshold:
             return grade
     return "-"
 
@@ -901,7 +931,7 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
         )
         # Ko'rsatiladigan umumiy ball: 0..91 (91 ga hech qachon yetmaydi).
         rasch_normalized = rasch_score_from_proportion(expected_pct / 100.0)
-        grade = get_rasch_grade(rasch_normalized)
+        grade = get_grade(rasch_normalized)
 
         # Foiz va fan ballari kutilgan FOIZdan (0..100) hisoblanadi — ball shkalasi
         # o'zgarganda ular o'zgarib ketmasligi uchun.
