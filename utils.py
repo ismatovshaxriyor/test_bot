@@ -409,6 +409,29 @@ def check_answers(correct: str, submitted: str) -> Tuple[int, int, List[bool]]:
     return correct_count, len(exp_correct), results
 
 
+def graded_item_count(correct: str) -> int:
+    """Baholanadigan bandlar soni.
+
+    Savollar sonidan farq qilishi mumkin: open2 (a/b juft javobli) savol
+    baholashda ikkita alohida bandga ajraladi va har biri alohida ball beradi.
+    Masalan 45 savolli Rash testda 10 ta open2 bo'lsa — 55 band baholanadi.
+    """
+    question_types = _extract_question_types(correct)
+    return sum(2 if t == "open2" else 1 for t in question_types)
+
+
+def format_questions_line(test: Test) -> str:
+    """«Savollar soni» qatori; baholanadigan bandlar farq qilsa — u ham qo'shiladi."""
+    line = f"❓ Savollar soni: {test.total_questions} ta\n"
+    items = graded_item_count(test.correct_answers)
+    if items and items != test.total_questions:
+        line += (
+            f"🧮 Baholanadigan bandlar: {items} ta "
+            f"(a/b javobli savollar ikkiga bo'linadi)\n"
+        )
+    return line
+
+
 def get_answer_review(correct: str, submitted: str) -> List[Dict]:
     """
     Har bir savol bo'yicha tekshiruv natijasini qaytaradi.
@@ -1069,7 +1092,7 @@ def format_stats(stats: Dict, test: Test) -> str:
     text += f"📌 Nomi: <b>{escape(test.name)}</b>\n"
     text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
-    text += f"❓ Savollar soni: {test.total_questions} ta\n"
+    text += format_questions_line(test)
 
     if test.scoring_mode == "rasch":
         text += f"📐 Baholash: <b>Rash modeli</b>\n"
@@ -1160,7 +1183,7 @@ def format_stats_simple(stats: Dict, test: Test) -> str:
     text += f"📌 Nomi: <b>{escape(test.name)}</b>\n"
     text += f"📝 Test kodi: <code>{test.id}</code>\n"
     text += f"👥 Ishtirokchilar: {stats['total_submissions']} ta\n"
-    text += f"❓ Savollar soni: {test.total_questions} ta\n"
+    text += format_questions_line(test)
     text += f"📊 Baholash: <b>Oddiy</b>\n\n"
 
     # Eng oson va qiyin savollar

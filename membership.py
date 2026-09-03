@@ -1,4 +1,5 @@
 """Membership tekshirish decorator va yordamchi funksiyalar"""
+import json
 import logging
 import time
 from functools import wraps
@@ -97,34 +98,57 @@ def get_join_keyboard(channels: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def _is_mini_admin_test(test_id) -> bool:
+    """Berilgan test Mini-Admin tomonidan yaratilganmi."""
+    try:
+        from database import Test
+        test = Test.get_by_id(int(test_id))
+    except Exception:
+        return False
+    return bool(test and test.creator and getattr(test.creator, "is_mini_admin", False))
+
+
 def is_mini_admin_test_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Tekshirilayotgan test Mini-Admin tomonidan yaratilganligini aniqlash.
 
-    Agar foydalanuvchi Mini-Admin yaratgan testni yechish uchun kirgan bo'lsa
-    (/start <test_id> yoki deeplink_solve_<test_id>), majburiy kanal a'zoligi talab qilinmaydi.
+    Mini-Admin yaratgan testni yechishning HAR BIR bosqichida majburiy kanal
+    a'zoligi talab qilinmaydi — nafaqat kirishda (/start <test_id>,
+    deeplink_solve_<test_id>), balki javob yuborishda ham. Aks holda foydalanuvchi
+    testni to'liq ishlab bo'lgach, topshirish paytida darvozaga urilib qolardi va
+    javoblari yo'qolardi.
     """
-    test_id_str = None
-
     # Case 1: /start <test_id>
     if context and context.args and len(context.args) > 0:
         arg = str(context.args[0]).strip()
-        if arg.isdigit():
-            test_id_str = arg
+        if arg.isdigit() and _is_mini_admin_test(arg):
+            return True
 
     # Case 2: Callback query deeplink_solve_<test_id>
-    if not test_id_str and update and update.callback_query and update.callback_query.data:
+    if update and update.callback_query and update.callback_query.data:
         data = update.callback_query.data
         if data.startswith("deeplink_solve_"):
-            test_id_str = data.rsplit("_", 1)[-1]
-
-    if test_id_str and test_id_str.isdigit():
-        try:
-            from database import Test
-            test = Test.get_by_id(int(test_id_str))
-            if test and test.creator and getattr(test.creator, "is_mini_admin", False):
+            arg = data.rsplit("_", 1)[-1]
+            if arg.isdigit() and _is_mini_admin_test(arg):
                 return True
-        except Exception:
-            pass
+
+    # Case 3: Boshlangan yechish sessiyasi (chatda javob yuborish, chatda yechish)
+    if context is not None:
+        current_test = getattr(context, "user_data", None) or {}
+        current_test = current_test.get("current_test")
+        if current_test is not None and _is_mini_admin_test(getattr(current_test, "id", 0)):
+            return True
+
+    # Case 4: WebApp'dan kelgan topshiriq (submit_test) — test_id payload ichida
+    message = getattr(update, "message", None)
+    web_app_data = getattr(message, "web_app_data", None) if message else None
+    if web_app_data is not None:
+        try:
+            payload = json.loads(web_app_data.data)
+            test_id = payload.get("test_id")
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            test_id = None
+        if test_id is not None and str(test_id).isdigit() and _is_mini_admin_test(test_id):
+            return True
 
     return False
 

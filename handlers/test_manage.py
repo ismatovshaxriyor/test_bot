@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, fil
 
 from database import get_or_create_user, Test, TestSubmission
 from utils import (
+    format_questions_line,
     get_question_stats,
     format_stats,
     format_stats_simple,
@@ -17,6 +18,7 @@ from export import (
     export_grade_chart, get_grade,
 )
 from config import ADMIN_ID
+from handlers.admin import is_admin
 from keyboards import (
     profile_menu_keyboard, my_tests_keyboard, test_detail_keyboard,
     test_active_stats_keyboard, confirm_end_keyboard, back_to_test_keyboard
@@ -174,7 +176,7 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
         return
 
     # Faqat test egasi yoki admin ko'ra oladi
-    if test.creator.telegram_id != user_id and user_id != ADMIN_ID:
+    if test.creator.telegram_id != user_id and not is_admin(user_id):
         text = "❌ Siz bu testning statistikasini ko'ra olmaysiz!"
         if edit:
             await message.edit_text(text)
@@ -189,7 +191,7 @@ async def show_stats(message, context, code: str, user_id: int, edit: bool = Fal
             f"📊 <b>Test statistikasi</b>\n\n"
             f"📌 Nomi: <b>{escape(test.name)}</b>\n"
             f"📝 Test kodi: <code>{test.id}</code>\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n"
+            f"{format_questions_line(test)}"
             f"👥 Ishtirokchilar: {subs_count} ta\n\n"
             f"🟢 Test faol\n\n"
             f"⚠️ To'liq statistika test yakunlangandan keyin ko'rsatiladi."
@@ -254,7 +256,7 @@ async def show_end_confirmation(message, context, code: str, user_id: int, edit:
             await message.reply_text(text)
         return
 
-    if test.creator.telegram_id != user_id and user_id != ADMIN_ID:
+    if test.creator.telegram_id != user_id and not is_admin(user_id):
         text = "❌ Siz bu testni yakunlay olmaysiz!"
         if edit:
             await message.edit_text(text)
@@ -304,7 +306,7 @@ async def confirm_end_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.message.edit_text(f"❌ '{code}' test topilmadi!")
         return
 
-    if test.creator.telegram_id != user.id and user.id != ADMIN_ID:
+    if test.creator.telegram_id != user.id and not is_admin(user.id):
         await query.message.edit_text("❌ Siz bu testni yakunlay olmaysiz!")
         return
 
@@ -426,7 +428,7 @@ async def test_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.message.edit_text(f"❌ '{code}' test topilmadi!")
         return
 
-    if test.creator.telegram_id != user.id and user.id != ADMIN_ID:
+    if test.creator.telegram_id != user.id and not is_admin(user.id):
         await query.message.edit_text("❌ Bu sizning testingiz emas!")
         return
 
@@ -527,7 +529,7 @@ async def export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(f"❌ '{code}' test topilmadi!")
         return
 
-    if test.creator.telegram_id != user.id and user.id != ADMIN_ID:
+    if test.creator.telegram_id != user.id and not is_admin(user.id):
         await query.message.reply_text("❌ Siz bu testning natijalarini yuklab ololmaysiz!")
         return
 

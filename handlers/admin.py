@@ -576,7 +576,6 @@ async def admin_confirm_end_test_callback(update: Update, context: ContextTypes.
 
 
 @admin_only
-@admin_only
 async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Database'ning zaxira nusxasini olib, adminga yuborish (manual tugma)"""
     query = update.callback_query

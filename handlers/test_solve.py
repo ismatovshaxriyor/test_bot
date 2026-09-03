@@ -11,7 +11,7 @@ from telegram.ext import (
 from peewee import IntegrityError
 
 from database import get_or_create_user, User, Test, TestSubmission, AdminTestWatch, Question
-from utils import check_answers, parse_simple_answers, latex_to_text
+from utils import check_answers, parse_simple_answers, latex_to_text, format_questions_line
 from config import ADMIN_ID
 from keyboards import main_menu_keyboard
 from membership import membership_required
@@ -172,7 +172,7 @@ async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.send_message(
             chat_id,
             f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"{format_questions_line(test)}\n"
             f"Ikki usuldan birini tanlang:\n"
             f"• <b>🚀 Interaktiv yechish</b> — ilova (formulalar chiroyli ko'rinadi)\n"
             f"• <b>{CHAT_SOLVE_BTN}</b> — savollar shu chatda birma-bir ko'rsatiladi\n\n"
@@ -184,7 +184,7 @@ async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.send_message(
             chat_id,
             f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"{format_questions_line(test)}\n"
             f"⚠️ Bu testda ochiq savollar bor — uni faqat ilova orqali yechish mumkin.\n"
             f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
             f"❌ Bekor qilish: /cancel yoki Ortga",
@@ -195,7 +195,7 @@ async def deeplink_solve_callback(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.send_message(
             chat_id,
             f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"{format_questions_line(test)}\n"
             f"Javoblaringizni ikki usuldan birida kiriting:\n"
             f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
             f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
@@ -269,7 +269,7 @@ async def remind_full_name_needed_for_solve(update: Update, context: ContextType
 async def receive_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Test kodini qabul qilish"""
     code = update.message.text.strip().upper()
-    if code == "ORTGA":
+    if code in ("ORTGA", "❌ BEKOR QILISH"):
         return await cancel_solve(update, context)
 
     # Mini-admin testi ekanligini tekshirish — agar shunday bo'lsa a'zolik majburiy emas
@@ -369,7 +369,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if is_mixed and has_questions:
         await update.message.reply_html(
             f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"{format_questions_line(test)}\n"
             f"Ikki usuldan birini tanlang:\n"
             f"• <b>🚀 Interaktiv yechish</b> — ilova (formulalar chiroyli ko'rinadi)\n"
             f"• <b>{CHAT_SOLVE_BTN}</b> — savollar shu chatda birma-bir ko'rsatiladi\n\n"
@@ -379,7 +379,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif is_mixed:
         await update.message.reply_html(
             f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"{format_questions_line(test)}\n"
             f"⚠️ Bu testda ochiq savollar bor — uni faqat ilova orqali yechish mumkin.\n"
             f"Pastdagi <b>🚀 Interaktiv yechish</b> tugmasini bosing.\n\n"
             f"❌ Bekor qilish: /cancel yoki Ortga",
@@ -388,7 +388,7 @@ async def process_test_code(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     else:
         await update.message.reply_html(
             f"📝 <b>{escape(test.name)}</b> (#{code})\n\n"
-            f"❓ Savollar soni: {test.total_questions} ta\n\n"
+            f"{format_questions_line(test)}\n"
             f"Javoblaringizni ikki usuldan birida kiriting:\n"
             f"1️⃣ Klassik: <code>{('abcd' * (test.total_questions // 4 + 1))[:test.total_questions]}</code>\n"
             f"2️⃣ Raqamli: <code>1a 2b 3c 4d</code> yoki <code>1a2b3c4d</code>\n\n"
