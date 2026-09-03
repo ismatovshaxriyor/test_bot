@@ -62,6 +62,98 @@ def repair_latex_escapes(text: str) -> str:
     return text
 
 
+def _read_group(s: str, i: int) -> Tuple[str, int]:
+    r"""LaTeX buyrug'ining bitta argumentini o'qiydi.
+
+    Uch xil yozuv qo'llab-quvvatlanadi:
+        {...}   — muvozanatlangan qavs (ichma-ich qavslar bilan)
+        \cmd    — bitta buyruq, masalan \frac\pi2 dagi \pi
+        x       — bitta belgi, masalan \frac37 dagi 3
+
+    Returns:
+        (argument matni, keyingi o'qish indeksi)
+    """
+    n = len(s)
+    while i < n and s[i].isspace():
+        i += 1
+    if i >= n:
+        return "", i
+
+    if s[i] == "{":
+        depth, j = 1, i + 1
+        while j < n and depth:
+            if s[j] == "{":
+                depth += 1
+            elif s[j] == "}":
+                depth -= 1
+            j += 1
+        return s[i + 1:j - 1], j
+
+    if s[i] == "\\":
+        j = i + 1
+        while j < n and s[j].isalpha():
+            j += 1
+        if j == i + 1:      # \{ , \, kabi bitta belgili buyruq
+            j = min(i + 2, n)
+        return s[i:j], j
+
+    return s[i], i + 1
+
+
+# Kasr/ildiz argumenti murakkab bo'lsa qavsga olinadi (masalan (3√15)/2).
+_NEEDS_PAREN_RE = re.compile(r"[+\-*/^√ ]")
+
+
+def _wrap_operand(part: str) -> str:
+    part = part.strip()
+    if not part or not _NEEDS_PAREN_RE.search(part):
+        return part
+    return f"({part})"
+
+
+def _expand_math_commands(s: str) -> str:
+    r"""\frac va \sqrt buyruqlarini qavs muvozanatini hisobga olib ochadi.
+
+    Regex bilan bo'lmaydi: \frac{3\sqrt{15}}{2} da surat ichida yana qavs bor,
+    \frac37 da esa qavs umuman yo'q (MathLive shunday yozadi).
+    """
+    out = []
+    i, n = 0, len(s)
+    while i < n:
+        if s[i] == "\\":
+            m = re.match(r"\\([a-zA-Z]+)", s[i:])
+            cmd = m.group(1) if m else ""
+            if cmd in ("frac", "dfrac", "tfrac"):
+                j = i + m.end()
+                num, j = _read_group(s, j)
+                den, j = _read_group(s, j)
+                out.append(
+                    f"{_wrap_operand(_expand_math_commands(num))}"
+                    f"/{_wrap_operand(_expand_math_commands(den))}"
+                )
+                i = j
+                continue
+            if cmd == "sqrt":
+                j = i + m.end()
+                root = ""
+                k = j
+                while k < n and s[k].isspace():
+                    k += 1
+                if k < n and s[k] == "[":          # \sqrt[3]{8}
+                    close = s.find("]", k)
+                    if close != -1:
+                        root, j = s[k + 1:close], close + 1
+                arg, j = _read_group(s, j)
+                inner = _expand_math_commands(arg)
+                prefix = _to_super(_expand_math_commands(root)) if root else ""
+                out.append(f"{prefix}√{_wrap_operand(inner)}")
+                i = j
+                continue
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
 def _convert_math(expr: str) -> str:
     """Bitta LaTeX ifodani o'qiladigan Unicode matnga aylantirish (chat uchun)."""
     s = expr
@@ -69,27 +161,14 @@ def _convert_math(expr: str) -> str:
     s = re.sub(r"\^\s*\{?\s*\\(?:circ|degree)\s*\}?", "°", s)
     # Aralash son: 3\frac{a}{b} -> 3 a/b (raqamdan keyin bo'shliq)
     s = re.sub(r"(\d)\s*\\[dt]?frac", r"\1 \\frac", s)
-    # \frac{a}{b} -> (a)/(b) (operator bo'lsa qavs; ichma-ich uchun bir necha marta)
-    frac_re = re.compile(r"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
-
-    def _frac(m):
-        def wrap(p):
-            p = p.strip()
-            return f"({p})" if re.search(r"[+\-*/^]", p) else p
-        return f"{wrap(m.group(1))}/{wrap(m.group(2))}"
-
-    for _ in range(5):
-        new = frac_re.sub(_frac, s)
-        if new == s:
-            break
-        s = new
-    # \sqrt{x} -> √(x)
-    s = re.sub(r"\\sqrt\s*\{([^{}]*)\}", r"√(\1)", s)
-    # Daraja va indeks
+    # Daraja va indeks — kasr ochilishidan OLDIN, shunda x^2 atom bo'lib qoladi
+    # va \frac{x^2}{96} keraksiz qavssiz x²/96 ko'rinishida chiqadi.
     s = re.sub(r"\^\{([^{}]*)\}", lambda m: _to_super(m.group(1)), s)
     s = re.sub(r"\^(\w)", lambda m: _to_super(m.group(1)), s)
     s = re.sub(r"_\{([^{}]*)\}", lambda m: _to_sub(m.group(1)), s)
     s = re.sub(r"_(\w)", lambda m: _to_sub(m.group(1)), s)
+    # \frac va \sqrt (qavs muvozanati bilan, ichma-ich)
+    s = _expand_math_commands(s)
     # Belgilar
     for key, val in _LATEX_SYMBOLS.items():
         s = s.replace(key, val)
@@ -102,18 +181,41 @@ def _convert_math(expr: str) -> str:
     return s
 
 
-def latex_to_text(text: str) -> str:
-    """$...$ ichidagi LaTeX ni Telegram chat uchun o'qiladigan matnga aylantiradi.
+# Matn $...$ chegarasisiz kelganda uni formula deb hisoblash uchun belgi: tanish
+# LaTeX buyrug'i yoki daraja/indeks. Oddiy matnni bejiz buzib qo'ymaslik uchun
+# ro'yxat yopiq — noma'lum "\cmd" o'z holicha qoladi.
+_LATEX_COMMAND_NAMES = sorted(
+    {key.lstrip("\\") for key in _LATEX_SYMBOLS}
+    | {"frac", "dfrac", "tfrac", "sqrt", "left", "right"},
+    key=len,
+    reverse=True,
+)
+# Buyruq nomidan keyin HARF kelmasligi tekshiriladi (\b emas): MathLive qavssiz
+# yozadi — "\\frac37", "\\sqrt2" da nom bilan raqam orasida so'z chegarasi yo'q.
+_BARE_LATEX_RE = re.compile(
+    r"\\(?:" + "|".join(_LATEX_COMMAND_NAMES) + r")(?![a-zA-Z])|[\^_]\{?\w"
+)
 
-    WebApp formulalarni to'liq render qiladi; bu esa bot xabarlarida (preview,
-    javob-kiritish) formulalar o'qiladigan ko'rinishda chiqishi uchun.
+
+def latex_to_text(text: str) -> str:
+    """LaTeX ni Telegram chat uchun o'qiladigan matnga aylantiradi.
+
+    Ikki ko'rinish qo'llab-quvvatlanadi:
+      • "$...$" ichidagi formula — savol matnlarida shunday keladi;
+      • butun satr xom LaTeX — MathLive maydonlaridan kelgan ochiq javoblar
+        ($ chegarasisiz) aynan shunday saqlanadi.
+
+    WebApp formulalarni o'zi render qiladi; bu funksiya bot xabarlari (javob
+    kaliti, xato javoblar ro'yxati, chatda yechish) uchun kerak.
     """
     if not text:
         return text
     text = repair_latex_escapes(text)
-    if "$" not in text:
-        return text
-    return re.sub(r"\$([^$]+)\$", lambda m: _convert_math(m.group(1)), text)
+    if "$" in text:
+        return re.sub(r"\$([^$]+)\$", lambda m: _convert_math(m.group(1)), text)
+    if _BARE_LATEX_RE.search(text):
+        return _convert_math(text)
+    return text
 
 
 def parse_simple_answers(text: str) -> Tuple[Optional[str], Optional[str]]:
