@@ -6,16 +6,19 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, fil
 
 from database import get_or_create_user, Test, TestSubmission
 from utils import (
+    RASCH_MAX_SCORE,
     format_questions_line,
     get_question_stats,
     format_stats,
     format_stats_simple,
     calculate_rasch_scores,
     get_answer_review,
+    get_rasch_grade,
+    rasch_score_from_proportion,
 )
 from export import (
     export_to_excel, export_to_pdf, export_chart, export_question_counts_chart,
-    export_grade_chart, get_grade,
+    export_grade_chart,
 )
 from config import ADMIN_ID
 from handlers.admin import is_admin
@@ -83,6 +86,7 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
             try:
                 rasch_scores_by_user[int(user_id)] = {
                     "score": float(row.get("rasch_normalized", 0)),
+                    "grade": row.get("grade"),
                     "se": row.get("se"),
                     "misfit": row.get("misfit", False),
                 }
@@ -94,11 +98,17 @@ async def _notify_participants_final_results(context: ContextTypes.DEFAULT_TYPE,
 
         if test.scoring_mode == "rasch":
             row = rasch_scores_by_user.get(user_id)
-            rounded_score = round(row["score"], 1) if row else round(float(submission.percentage), 1)
-            grade = get_grade(rounded_score)
+            if row:
+                rounded_score = round(row["score"], 1)
+                grade = row.get("grade") or get_rasch_grade(rounded_score)
+            else:
+                # Rash natijasi topilmadi — xom foizni ball shkalasiga o'tkazamiz
+                rounded_score = rasch_score_from_proportion(float(submission.percentage) / 100.0)
+                grade = get_rasch_grade(rounded_score)
             se_part = f" ± {row['se']}" if row and row.get("se") is not None else ""
             result_line = (
-                f"📐 <b>Natijangiz:</b> {rounded_score}{se_part} ball\n"
+                f"📐 <b>Natijangiz:</b> {rounded_score}{se_part} ball "
+                f"(maksimal {RASCH_MAX_SCORE:.0f})\n"
                 f"🏅 <b>Daraja:</b> {grade}\n"
                 f"📊 <b>To'g'ri javoblar:</b> {submission.correct_count}/{submission.total_count}"
             )

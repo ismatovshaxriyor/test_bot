@@ -503,6 +503,43 @@ def get_answer_review(correct: str, submitted: str) -> List[Dict]:
 
 # ============ RASCH MODEL ============
 
+# Ko'rsatiladigan "umumiy ball" 0..91 oralig'ida bo'ladi. 91 — erishib bo'lmaydigan
+# yuqori chegara (asimptota): ball = 91 × kutilgan to'g'ri javob ulushi, ulush esa
+# sigmoidlar o'rtachasi bo'lgani uchun matematik jihatdan 1 ga hech qachon teng
+# bo'lmaydi. Qo'shimcha shift (_RASCH_SCORE_CEILING) yaxlitlashdan keyin ham
+# ballning 91 ga chiqib ketishiga yo'l qo'ymaydi.
+RASCH_MAX_SCORE = 91.0
+_RASCH_SCORE_CEILING = RASCH_MAX_SCORE - 0.01
+
+# Daraja chegaralari 0..91 shkalada. Ular 55 bandli standart Rash testdagi maqsadli
+# to'g'ri javob soniga qarab tanlangan: chegara = 91 × (soni − 0.5) / 55, ya'ni ikki
+# qo'shni natija ORASIGA qo'yilgan. Aynan chegaraga emas, o'rtasiga qo'yilishining
+# sababi — Rash bali xom foizga faqat TAXMINAN teng (WLE baholashda natijalar
+# o'rtachaga bir oz siqiladi), shuning uchun aniq nuqtaga qo'yilgan chegara
+# maqsadli natijani bir pog'ona pastga tushirib yuborardi.
+RASCH_GRADE_THRESHOLDS = (
+    (78.6, "A+"),   # 48 ta va undan yuqori
+    (68.7, "A"),    # 42 ta
+    (58.7, "B+"),   # 36 ta
+    (48.8, "B"),    # 30 ta
+    (35.6, "C+"),   # 22 ta
+    (24.0, "C"),    # 15 ta — eng past o'tish darajasi
+)
+
+
+def rasch_score_from_proportion(proportion: float) -> float:
+    """Kutilgan to'g'ri javob ulushini (0..1) 0..91 ballga aylantiradi."""
+    return round(min(proportion * RASCH_MAX_SCORE, _RASCH_SCORE_CEILING), 2)
+
+
+def get_rasch_grade(ball: float) -> str:
+    """Rash bali (0..91) bo'yicha daraja. Chegaradan pastda '-' (o'tmagan)."""
+    for threshold, grade in RASCH_GRADE_THRESHOLDS:
+        if ball >= threshold:
+            return grade
+    return "-"
+
+
 
 def _sigmoid(x: float) -> float:
     """Numerik barqaror sigmoid"""
@@ -862,21 +899,25 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             sum(_sigmoid(theta - beta) for beta in item_difficulties) / total_questions * 100.0
             if total_questions > 0 else 0.0
         )
-        rasch_normalized = round(expected_pct, 2)
+        # Ko'rsatiladigan umumiy ball: 0..91 (91 ga hech qachon yetmaydi).
+        rasch_normalized = rasch_score_from_proportion(expected_pct / 100.0)
+        grade = get_rasch_grade(rasch_normalized)
 
-        # Foiz hisoblash: 65 ball va undan yuqori -> 100%, kam bo'lsa (ball * 100 / 65)
-        if rasch_normalized >= 65.0:
+        # Foiz va fan ballari kutilgan FOIZdan (0..100) hisoblanadi — ball shkalasi
+        # o'zgarganda ular o'zgarib ketmasligi uchun.
+        # Foiz: 65 va undan yuqori -> 100%, kam bo'lsa (foiz * 100 / 65)
+        if expected_pct >= 65.0:
             calc_pct = 100.0
         else:
-            calc_pct = max(0.0, min(100.0, (rasch_normalized * 100.0) / 65.0))
+            calc_pct = max(0.0, min(100.0, (expected_pct * 100.0) / 65.0))
 
         x_frac = calc_pct / 100.0  # kasr ko'rinishida [0.0 .. 1.0]
 
         # 1-Fan va 2-Fan ballari:
         # 1-Fan = 93 * x + 11
         # 2-Fan = 63 * x + 11
-        # Agar foiz < 46% bo'lsa (daraja '-'), 1- va 2-fanlarga ham ball berilmaydi ('-')
-        if calc_pct >= 46.0:
+        # Daraja '-' bo'lsa (o'tmagan), 1- va 2-fanlarga ham ball berilmaydi ('-')
+        if grade != "-":
             fan1_score = round(93.0 * x_frac + 11.0, 1)
             fan2_score = round(63.0 * x_frac + 11.0, 1)
         else:
@@ -891,6 +932,7 @@ def calculate_rasch_scores(test: Test, submissions: list) -> Dict:
             'percentage': round(calc_pct, 1),
             'rasch_score': round(theta, 2),
             'rasch_normalized': rasch_normalized,
+            'grade': grade,
             'fan1_score': fan1_score,
             'fan2_score': fan2_score,
             'se': p_fit['se'],
